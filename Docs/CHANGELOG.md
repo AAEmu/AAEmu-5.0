@@ -1,5 +1,40 @@
 # CHANGELOG - AAEmu 5.0.7.0 Private Server
 
+## [5.0.7.0 private] - 02.06.2026
+
+### Bug Fixes / Исправления
+
+**fix(physics): исправить погружение и выныривание кораблей при призыве**
+
+На русском:
+- Исправлена видимая анимация погружения/выныривания корабля сразу после окончания PortalTime
+- Причина: **гонка потоков** — `Build()` добавляет тело в Jitter с `AffectedByGravity = true` по умолчанию; между `Build()` и `AddForRectangularParallelepiped()` физический поток успевал сделать тик, применяя гравитацию без буоянси → тело получало ~0.5 м/с вниз
+- Так как `SyncTransformWithRigidBody` пропускается во время PortalTime, за 5-10 секунд корабль уходил на ~2.5м вниз; после окончания PortalTime клиент получал реальную позицию → видимый прыжок вниз
+- Решение 1: сразу после `Build()` устанавливать `Hull.AffectedByGravity = false` и обнулять скорости
+- Решение 2: в `Buoyancy.PreStep` во время PortalTime обнулять скорости (страховка от любых других источников импульсов)
+- Дополнительно: `CreateWaterAndLandSurfaceCache()` вызывается в `AddShip()` для корректного `CachedWaterSurface` с первого тика
+
+English:
+- Fixed visible submersion/surfacing of ships right after PortalTime ends
+- Root cause: **thread race** — `Build()` adds the hull to Jitter with `AffectedByGravity = true`; between `Build()` and `AddForRectangularParallelepiped()` the physics thread could run one step applying gravity with no buoyancy → hull gained ~0.5 m/s downward
+- Since `SyncTransformWithRigidBody` is skipped during PortalTime, over 5-10 s the body drifted ~2.5 m down; when PortalTime ended the client received the real (lower) position → visible dive
+- Fix 1: set `Hull.AffectedByGravity = false` and zero velocity/angular velocity immediately after `Build()`
+- Fix 2: in `Buoyancy.PreStep` during PortalTime, zero velocity each tick (safety net for terrain impulses etc.)
+- Also: `CreateWaterAndLandSurfaceCache()` now called in `AddShip()` so `CachedWaterSurface` is valid from tick 1
+
+Files changed: `AAEmu.Game/Core/Managers/World/PhysicsManager.cs`, `AAEmu.Game/Physics/Forces/Buoyancy.cs`
+
+Tests added (`AAEmu.UnitTests/Game/Physics/ShipPhysicsTests.cs`, 5 новых `[Fact]`):
+- `BuoyancyPreStep_DuringPortalTime_SetsGravityFalseAndZerosVelocity`
+- `BuoyancyPreStep_AfterPortalTime_EnablesGravity`
+- `BuoyancyEquilibrium_AtTargetDepth_BuoyancyForceEqualsGravityForce`
+- `ShipController_Build_DefaultGravityIsTrue_RequiresExplicitDisableInAddShip`
+- `BuoyancyEquilibrium_TargetSpawnZ_IsSlightlyBelowWaterSurface`
+
+Docs added: `Docs/ship-spawn-dive-fix-2026-06-02.md`
+
+---
+
 ## [5.0.7.0 private] - 31.05.2026
 
 ### Bug Fixes / Исправления

@@ -303,6 +303,10 @@ public class Unit : BaseUnit, IUnit
         }
         base.SetPosition(x, y, z, rotationX, rotationY, rotationZ);
 
+        // Characters handle underwater/breath in Character.SetPosition.
+        if (this is Character)
+            return;
+
         var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.WorldId)?.OceanLevel - 2f ?? 98f;
 
         // Если персонаж на кораблле, проверяем дыхание только если он ВНУТРИ корабля (Local.Z < -5)

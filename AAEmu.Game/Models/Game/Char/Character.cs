@@ -1574,17 +1574,49 @@ public partial class Character : Unit, ICharacter
 
         base.SetPosition(x, y, z, rotationX, rotationY, rotationZ);
 
-        var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.WorldId)?.OceanLevel - 2f ?? 98f;
+        var world = WorldManager.Instance.GetWorld(Transform.WorldId);
 
-        // Если персонаж на кораблле, проверяем дыхание только если он ВНУТРИ корабля (Local.Z < -5)
-        // Палуба корабля обычно на высоте ~0-10 от центра, поэтому отрицательные значения = под палубой/внутри
-        var shouldCheckBreathing = !(ParentObj is Slave slave && Transform.Local.Position.Z >= -5f);
-        var newUnderWaterState = shouldCheckBreathing && Transform.World.Position.Z < worldDrownThreshold;
+        var probePos = Transform.World.Position;
+        Slave attachedSlave = null;
 
-        if (!IsUnderWater && newUnderWaterState)
-            IsUnderWater = true;
-        else if (IsUnderWater && !newUnderWaterState)
-            IsUnderWater = false;
+        for (var t = Transform.Parent; t != null && attachedSlave == null; t = t.Parent)
+            if (t.GameObject is Slave s)
+                attachedSlave = s;
+
+        for (var t = Transform.StickyParent; t != null && attachedSlave == null; t = t.Parent)
+            if (t.GameObject is Slave s)
+                attachedSlave = s;
+
+        if (attachedSlave != null)
+        {
+            var shipModel = attachedSlave.ShipController?.ShipModel ?? ModelManager.Instance.GetShipModel(attachedSlave.ModelId);
+            if (shipModel != null)
+            {
+                var deckProbeOffset = shipModel.MassBoxSizeZ * attachedSlave.Scale * 0.35f;
+                var deckProbeZ = attachedSlave.Transform.World.Position.Z + deckProbeOffset;
+                if (deckProbeZ > probePos.Z)
+                    probePos.Z = deckProbeZ;
+            }
+        }
+
+        if (world == null || !world.IsWater(probePos))
+        {
+            if (IsUnderWater)
+                IsUnderWater = false;
+        }
+        else
+        {
+            var waterSurface = world.Water?.GetWaterSurface(probePos, out _) ?? world.OceanLevel;
+            const float surfaceBand = 2f;
+            const float hysteresis = 0.35f;
+            var enterThreshold = waterSurface - surfaceBand;
+            var exitThreshold = waterSurface - surfaceBand + hysteresis;
+
+            if (!IsUnderWater && probePos.Z < enterThreshold)
+                IsUnderWater = true;
+            else if (IsUnderWater && probePos.Z > exitThreshold)
+                IsUnderWater = false;
+        }
 
         // Connection.ActiveChar.SendDebugMessage("Move New Pos: {0}", Transform.ToString());
 

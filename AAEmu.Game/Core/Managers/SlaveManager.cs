@@ -899,6 +899,22 @@ public class SlaveManager : Singleton<SlaveManager>
 
         // Move it to target location, and call spawn packet
         summonedSlave.Transform = spawnPos.CloneDetached(summonedSlave);
+        if (summonedSlave.Template.IsABoat() && summonedSlave.Template.PortalTime > 0f)
+        {
+            var spawnWorld = WorldManager.Instance.GetWorld(summonedSlave.Transform.WorldId);
+            var waterAtFinal = spawnWorld?.Water?.GetWaterSurface(summonedSlave.Transform.World.Position, out _) ?? 0f;
+            if (waterAtFinal > 0f)
+            {
+                var mul = global::AAEmu.Game.Physics.Forces.Buoyancy.ShipWaterDensityMul;
+                if (mul > 0f)
+                {
+                    var targetSubmerged = 1f / (global::AAEmu.Game.Physics.Forces.Buoyancy.BaseWaterDensity * mul);
+                    var targetZ = waterAtFinal - targetSubmerged;
+                    if (summonedSlave.Transform.Local.Position.Z < targetZ)
+                        summonedSlave.Transform.Local.SetHeight(targetZ);
+                }
+            }
+        }
         summonedSlave.Spawn();
         #endregion
 

@@ -464,6 +464,14 @@ namespace AAEmu.Game.Core.Managers.World
             var ctrl = new ShipController(world: _physWorld, shipModel: shipModel);
 
             ctrl.Build(initialPosition: pos, initialOrientation: rot);
+            // Disable gravity immediately after Build so the physics thread cannot apply even
+            // a single gravity tick before Buoyancy.PreStep first processes this body.
+            // Without this a race window between Build() and AddForRectangularParallelepiped()
+            // lets one step of gravity run, giving the hull ~0.5 m/s downward velocity that
+            // accumulates over PortalTime into a large positional offset (visible dive on spawn).
+            ctrl.Hull.AffectedByGravity = false;
+            ctrl.Hull.Velocity = JVector.Zero;
+            ctrl.Hull.AngularVelocity = JVector.Zero;
 
             _shipControllers[slave.Id] = ctrl;
             slave.RigidBody = ctrl.Hull;
@@ -474,6 +482,11 @@ namespace AAEmu.Game.Core.Managers.World
             // so ensure the initial server-side Transform matches the physics spawn position.
             SyncTransformWithRigidBody(slave);
             slave.Transform.FinalizeTransform();
+            // Pre-populate water/floor cache so Buoyancy.PreStep has a valid CachedWaterSurface on the
+            // very first tick after PortalTime ends. Without this the cache is 0, CustomWater() returns
+            // true → waterSurfaceLevel overrides to 0 → buoyancy depth ≤ 0 → no upward force → ship
+            // sinks one tick under gravity, then bounces back (the visible submersion/surfacing on spawn).
+            slave.CreateWaterAndLandSurfaceCache();
             ctrl.Replication.Reset();
             slave.WavePitchPhase = 0f;
             slave.ShipHullCollisionDamageCooldownByOtherShipId.Clear();

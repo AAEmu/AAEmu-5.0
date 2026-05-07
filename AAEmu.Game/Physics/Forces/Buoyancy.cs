@@ -27,7 +27,6 @@ public class Buoyancy : ForceGenerator
     /// </summary>
     public static float ShipWaterDensityMul = 3f;
 
-
     /// <summary>
     /// Returns true if the given point is within the area.
     /// </summary>
@@ -219,6 +218,10 @@ public class Buoyancy : ForceGenerator
             body.AffectedByGravity = slave.SpawnTime.AddSeconds(slave.Template.PortalTime) <= DateTime.UtcNow;
             if (!body.AffectedByGravity)
             {
+                // Drain any residual velocity so the hull cannot drift during portal time
+                // (safety net against the race window in AddShip and any terrain impulses).
+                body.Velocity = JVector.Zero;
+                body.AngularVelocity = JVector.Zero;
                 continue;
             }
 

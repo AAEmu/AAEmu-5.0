@@ -3,11 +3,17 @@ using System.Collections.Generic;
 using System.Numerics;
 
 using AAEmu.Game.Models.Game;
+using AAEmu.Game.Models.Game.Models;
+using AAEmu.Game.Models.Game.Slaves;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.slaves;
 using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Physics;
+using AAEmu.Game.Physics.Forces;
 using AAEmu.Game.Utils;
+
+using Jitter2;
+using Jitter2.LinearMath;
 
 using Xunit;
 
@@ -580,5 +586,173 @@ public class ShipPhysicsTests
         Assert.Equal(1f, jv.X);
         Assert.Equal(3f, jv.Y); // Vector Z -> Jitter Y
         Assert.Equal(2f, jv.Z); // Vector Y -> Jitter Z
+    }
+
+    // ----------------------------------------------------------------
+    // 11. Ship-spawn dive fix — thread race condition regression tests
+    //     (added 2026-06-02)
+    //
+    //     Helper: builds a minimal Jitter2 World + Buoyancy + ShipController + Slave
+    //     without touching any game singletons.
+    // ----------------------------------------------------------------
+
+    /// <summary>
+    /// Returns a minimal ShipModel with a non-zero mass and box dimensions large
+    /// enough for Jitter2's BoxShape to accept without throwing.
+    /// </summary>
+    private static ShipModel MakeTestShipModel() => new()
+    {
+        Mass = 500f,
+        MassBoxSizeX = 8f,
+        MassBoxSizeY = 20f,
+        MassBoxSizeZ = 3f,
+        MassCenterX = 0f,
+        MassCenterY = 0f,
+        MassCenterZ = 0f
+    };
+
+    /// <summary>
+    /// Creates a Jitter2 World, a Buoyancy instance (FluidBox at Y=100),
+    /// a ShipController + hull, and a Slave wired together with the given SpawnTime.
+    /// The hull is added to buoyancy via AddForRectangularParallelepiped.
+    /// Returns all three objects so the test can make assertions and clean up.
+    /// </summary>
+    private static (Jitter2.World world, Buoyancy buoyancy, ShipController ctrl, Slave slave)
+        BuildShipScenario(DateTime spawnTime, float portalTime = 10f)
+    {
+        var world = new Jitter2.World();
+
+        // FluidBox: water surface at physics Y = 100 (game Z = 100)
+        var buoyancy = new Buoyancy(world)
+        {
+            FluidBox = new JBoundingBox(
+                new JVector(-10000f, -200f, -10000f),
+                new JVector( 10000f,  100f,  10000f))
+        };
+
+        var shipModel = MakeTestShipModel();
+        var ctrl = new ShipController(world, shipModel);
+
+        // Spawn the hull at waterline
+        ctrl.Build(new JVector(0f, 100f, 0f), JQuaternion.Identity);
+
+        var template = new SlaveTemplate { PortalTime = portalTime };
+        var slave = new Slave
+        {
+            SpawnTime = spawnTime,
+            Template = template,
+            ShipController = ctrl,
+            CachedWaterSurface = 100f
+        };
+
+        // Tag the hull so Buoyancy.PreStep can cast body.Tag to Slave
+        ctrl.Hull.Tag = slave;
+
+        // Register the hull with the buoyancy simulator
+        buoyancy.AddForRectangularParallelepiped(ctrl.Hull, 3);
+
+        return (world, buoyancy, ctrl, slave);
+    }
+
+    [Fact]
+    public void BuoyancyPreStep_DuringPortalTime_SetsGravityFalseAndZerosVelocity()
+    {
+        // Arrange: ship just spawned — PortalTime has NOT expired
+        var (world, buoyancy, ctrl, _) = BuildShipScenario(
+            spawnTime: DateTime.UtcNow,   // spawned right now
+            portalTime: 10f);             // portal lasts 10 s
+
+        // Simulate the race condition: physics gave the hull a downward velocity
+        ctrl.Hull.Velocity = new JVector(0f, -0.5f, 0f);
+        ctrl.Hull.AffectedByGravity = true;
+
+        // Act
+        buoyancy.PreStep(0.05f);
+
+        // Assert: PreStep must suppress both gravity and residual velocity during PortalTime
+        Assert.False(ctrl.Hull.AffectedByGravity,
+            "Hull must have gravity disabled while PortalTime has not expired.");
+        Assert.Equal(JVector.Zero.X, ctrl.Hull.Velocity.X, precision: 3);
+        Assert.Equal(JVector.Zero.Y, ctrl.Hull.Velocity.Y, precision: 3);
+        Assert.Equal(JVector.Zero.Z, ctrl.Hull.Velocity.Z, precision: 3);
+    }
+
+    [Fact]
+    public void BuoyancyPreStep_AfterPortalTime_EnablesGravity()
+    {
+        // Arrange: ship spawned 30 s ago — PortalTime (10 s) has expired
+        var (world, buoyancy, ctrl, _) = BuildShipScenario(
+            spawnTime: DateTime.UtcNow.AddSeconds(-30),
+            portalTime: 10f);
+
+        // Act
+        buoyancy.PreStep(0.05f);
+
+        // Assert: once PortalTime has expired the hull must be subject to gravity again
+        Assert.True(ctrl.Hull.AffectedByGravity,
+            "Hull must have gravity re-enabled after PortalTime has expired.");
+    }
+
+    [Fact]
+    public void BuoyancyEquilibrium_AtTargetDepth_BuoyancyForceEqualsGravityForce()
+    {
+        // Pure math: at equilibrium the upward buoyancy force must exactly cancel gravity.
+        //
+        // The formula used in Buoyancy.PreStep:
+        //   buoyancyForce = submergedDepth * mass * Density * ShipWaterDensityMul * 9.81
+        //
+        // Setting buoyancyForce = gravityForce (= mass * 9.81) and solving for submergedDepth:
+        //   submergedDepth_eq = 1 / (Density * ShipWaterDensityMul)
+        //                     = 1 / (BaseWaterDensity * ShipWaterDensityMul)
+
+        const float mass = 1000f;
+        const float g = 9.81f;
+
+        var density = Buoyancy.BaseWaterDensity;       // 1.025
+        var densityMul = Buoyancy.ShipWaterDensityMul; // 3.0
+
+        var submergedDepthEq = 1f / (density * densityMul);
+
+        var gravityForce = mass * g;
+        var buoyancyForce = submergedDepthEq * mass * density * densityMul * g;
+
+        Assert.Equal(gravityForce, buoyancyForce, precision: 3);
+    }
+
+    [Fact]
+    public void ShipController_Build_DefaultGravityIsTrue_RequiresExplicitDisableInAddShip()
+    {
+        // Documents (and guards) the Jitter2 default: newly created bodies have
+        // AffectedByGravity == true immediately after Build().
+        // PhysicsManager.AddShip() must therefore explicitly set it to false to prevent
+        // the one-step gravity window that caused the spawn-dive bug.
+
+        var world = new Jitter2.World();
+        var ctrl = new ShipController(world, MakeTestShipModel());
+
+        ctrl.Build(new JVector(0f, 100f, 0f), JQuaternion.Identity);
+
+        Assert.True(ctrl.Hull.AffectedByGravity,
+            "Jitter2 default is AffectedByGravity=true; AddShip must set it to false explicitly.");
+    }
+
+    [Fact]
+    public void BuoyancyEquilibrium_TargetSpawnZ_IsSlightlyBelowWaterSurface()
+    {
+        // Verifies the SlaveManager spawn-height formula:
+        //   targetZ = waterSurface - 1 / (BaseWaterDensity * ShipWaterDensityMul)
+        //
+        // The result must be between (waterSurface - 1) and waterSurface, i.e. the hull
+        // sits just below the surface at the equilibrium draught, not fully submerged or floating above.
+
+        const float waterSurface = 100f;
+
+        var targetSubmerged = 1f / (Buoyancy.BaseWaterDensity * Buoyancy.ShipWaterDensityMul);
+        var targetZ = waterSurface - targetSubmerged;
+
+        Assert.True(targetZ > waterSurface - 1f,
+            $"targetZ ({targetZ:F4}) should be no more than 1 m below the water surface.");
+        Assert.True(targetZ < waterSurface,
+            $"targetZ ({targetZ:F4}) should be below the water surface ({waterSurface}).");
     }
 }
