@@ -17,6 +17,8 @@ using AAEmu.Game.Models.Game.Skills.Static;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.slaves;
+using AAEmu.Game.Models.Game.Skills.SkillControllers;
+using AAEmu.Game.Physics.Debug;
 
 namespace AAEmu.Game.Core.Packets.C2G;
 
@@ -336,6 +338,15 @@ public class CSStartSkillPacket : GamePacket
             if (directResult.Result != SkillResult.Success)
             {
                 return directResult;
+            }
+
+            // Harpoon rope controller integration: trigger launch/cut on successful slave skill
+            if (caster is Slave slave)
+            {
+                if (request.SkillId == HarpoonMechanicsDebug.ShipLaunchHarpoonSkillId)
+                    ShipHarpoonRopeController.OnLaunchSucceeded(slave, request.SkillCastTarget, player);
+                else if (request.SkillId == HarpoonMechanicsDebug.ShipCutHarpoonRopeSkillId)
+                    ShipHarpoonRopeController.OnCutRope(slave, player);
             }
         }
 

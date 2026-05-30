@@ -24,6 +24,7 @@ using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Items.Templates;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Buffs;
+using AAEmu.Game.Models.Game.Skills.SkillControllers;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Slaves;
 using AAEmu.Game.Models.Game.Units;
@@ -402,6 +403,9 @@ public class SlaveManager : Singleton<SlaveManager>
             character.Transform.Parent = null;
             character.Transform.StickyParent = null;
         }
+
+        // Break harpoon rope when operator leaves the slave
+        ShipHarpoonRopeController.OnOperatorLeftSlave(slave, character);
 
         character.Buffs.TriggerRemoveOn(BuffRemoveOn.Unmount);
         character.AttachedPoint = AttachPointKind.None;

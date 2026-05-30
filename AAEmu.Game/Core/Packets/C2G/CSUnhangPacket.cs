@@ -1,7 +1,9 @@
-﻿using AAEmu.Commons.Network;
+using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Game;
 using AAEmu.Game.Core.Packets.G2C;
+using AAEmu.Game.Models.Game.Skills.SkillControllers;
+using AAEmu.Game.Models.Game.Units.slaves;
 
 namespace AAEmu.Game.Core.Packets.C2G;
 
@@ -24,13 +26,18 @@ public class CSUnhangPacket : GamePacket
         Logger.Trace($"Unhang, unitObjId: {unitObjId}, targetObjId: {targetObjId}, Reason: {reason}");
         // For 1.2 the targetObjId is not sent, so we will need to grab our saved value from Transform
         // Later this can also be used to verify if it's the correct object
+        Slave stickySlave = null;
         var character = WorldManager.Instance.GetBaseUnit(unitObjId);
         if (character != null)
         {
+            stickySlave = character.Transform.StickyParent?.GameObject as Slave;
             targetObjId = character.Transform.StickyParent?.GameObject?.ObjId ?? 0;
             character.Transform.StickyParent = null;
         }
 
         Connection.ActiveChar.BroadcastPacket(new SCUnhungPacket(unitObjId, targetObjId, reason), false);
+
+        if (stickySlave != null)
+            ShipHarpoonRopeController.BreakRopeForClients(stickySlave, cutouted: false);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
@@ -10,7 +10,6 @@ using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.DoodadObj.Static;
 using AAEmu.Game.Models.Game.Models;
-using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.SkillControllers;
 using AAEmu.Game.Models.Game.Slaves;
@@ -18,6 +17,7 @@ using AAEmu.Game.Models.Game.Static;
 using AAEmu.Game.Models.Game.Units.Movements;
 using AAEmu.Game.Models.Game.Units.slaves;
 using AAEmu.Game.Models.Game.Units.Static;
+using AAEmu.Game.Models;
 using AAEmu.Game.Physics;
 using AAEmu.Game.Physics.Forces;
 using AAEmu.Game.Physics.Util;
@@ -39,19 +39,25 @@ namespace AAEmu.Game.Core.Managers.World
         public InstanceWorld SimulationWorld { get; set; }
 
         private const float DefaultWaterLevel = 100f;
-        private const int MaxPhysicsSteps = 4;
 
-        private float TargetPhysicsTps { get; set; } = 100f;
+        /// <summary>
+        /// Target physics ticks per second. 25 TPS matches the reference implementation.
+        /// </summary>
+        public float TargetPhysicsTps { get; set; } = AppConfiguration.Instance.World.TargetPhysicsTps;
+        private float TargetPhysicsTickTime => 1f / TargetPhysicsTps;
         internal Thread _thread;
 
         internal Jitter2.World _physWorld;
         internal Buoyancy _buoyancy;
         public bool ThreadRunning { get; set; }
 
-        // --- Добавляем tracker ---
-        private readonly LimitedCallTracker _finalizeTransformTracker = new(5);
-
         private readonly Dictionary<uint, ShipController> _shipControllers = new();
+
+        /// <summary>Physics-thread loop counter for throttling water/land cache refresh.</summary>
+        private ulong _physicsLoopIndex;
+
+        /// <summary>Last loop index and XY at which water/terrain cache was rebuilt (per ship slave id).</summary>
+        private readonly Dictionary<uint, (ulong Loop, Vector2 Xy)> _waterLandCacheStamp = new();
 
         private readonly ConcurrentQueue<Action> _pendingActions = new();
         private readonly Lock _worldLock = new();
@@ -85,30 +91,56 @@ namespace AAEmu.Game.Core.Managers.World
             Logger.Info($"PhysicsManager {SimulationWorld.Name} initialized.");
         }
 
+        /// <summary>Used heightmap tester, saved so it can be edited later.</summary>
+        private HeightmapTester WorldHeightMapTester { get; set; }
+
         public void InitializeTerrain()
         {
-            // Add terrain shape based on height map
-            //if (SimulationWorld.Name != "main_world") { return; }
-            //try
-            //{
-            //    var hmap = WorldManager.Instance.GetWorld(0).HeightMaps;
-            //    var heightMaxCoefficient = WorldManager.Instance.GetWorld(0).HeightMaxCoefficient;
-            //    var dx = hmap.GetLength(0);
-            //    var dz = hmap.GetLength(1);
-            //    var hmapTerrain = new float[dx, dz];
-            //    for (var x = 0; x < dx; x++)
-            //        for (var y = 0; y < dz; y++)
-            //            hmapTerrain[x, y] = (float)(hmap[x, y] / heightMaxCoefficient);
+            if (SimulationWorld?.Template == null)
+            {
+                Logger.Warn("PhysicsManager: no world template, skipping terrain init.");
+                return;
+            }
 
-            //    var heightmap = new Heightmap(hmapTerrain);
-            //    var tester = new HeightmapTester(heightmap);
-            //    _physWorld.BroadPhaseFilter = new HeightmapDetection(_physWorld, tester);
-            //    _physWorld.DynamicTree.AddProxy(tester, false);
-            //}
-            //catch (Exception e)
-            //{
-            //    Logger.Error(e);
-            //}
+            Logger.Debug($"PhysicsManager {SimulationWorld.Name} initializing terrain.");
+            try
+            {
+                var dataX = SimulationWorld.CellX * WorldManager.CELL_HMAP_RESOLUTION;
+                var dataZ = SimulationWorld.CellY * WorldManager.CELL_HMAP_RESOLUTION;
+                var hmapTerrain = new float[dataX, dataZ];
+                var cellCountMax = SimulationWorld.CellX * SimulationWorld.CellY * 1f;
+                var cellCount = 0;
+                for (var cellY = 0; cellY < SimulationWorld.CellY; cellY++)
+                {
+                    for (var cellX = 0; cellX < SimulationWorld.CellX; cellX++)
+                    {
+                        cellCount++;
+                        var cell = SimulationWorld.Template.Cells[cellX, cellY];
+                        if (cell == null || !cell.Loaded)
+                            continue;
+                        for (var inX = 0; inX < WorldManager.CELL_HMAP_RESOLUTION; inX++)
+                        for (var inY = 0; inY < WorldManager.CELL_HMAP_RESOLUTION; inY++)
+                        {
+                            var x = cellX * WorldManager.CELL_HMAP_RESOLUTION + inX;
+                            var y = cellY * WorldManager.CELL_HMAP_RESOLUTION + inY;
+                            hmapTerrain[x, y] = cell.GetHeightMapDataInCell(x % WorldManager.CELL_HMAP_RESOLUTION,
+                                y % WorldManager.CELL_HMAP_RESOLUTION);
+                        }
+                    }
+
+                    if (AppConfiguration.Instance.World.PreLoadTerrain)
+                        Logger.Debug($"Loading {SimulationWorld.Name} heightmap data {cellCount / cellCountMax * 100f:F0}%");
+                }
+
+                var heightmap = new Heightmap(hmapTerrain);
+                WorldHeightMapTester = new HeightmapTester(heightmap);
+                _physWorld.BroadPhaseFilter = new HeightmapDetection(_physWorld, WorldHeightMapTester);
+                _physWorld.DynamicTree.AddProxy(WorldHeightMapTester, false);
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+            }
 
             Logger.Info($"PhysicsManager {SimulationWorld.Name} initialized Terrain.");
         }
@@ -124,29 +156,39 @@ namespace AAEmu.Game.Core.Managers.World
         {
             try
             {
-                Logger.Debug($"PhysicsThread Start: {Thread.CurrentThread.Name}");
+                Logger.Debug($"PhysicsThread Start: {Thread.CurrentThread.Name}, targeting {TargetPhysicsTps} TPS");
 
                 var lastTick = TimeSpan.FromMilliseconds(Environment.TickCount64);
-                var fixedStep = TimeSpan.FromSeconds(1f / TargetPhysicsTps);
-                var accumulatedTime = TimeSpan.Zero;
+                Thread.Sleep((int)(TargetPhysicsTickTime * 1000f));
 
                 while (ThreadRunning)
                 {
-                    Thread.Sleep(fixedStep);
+                    var targetStepTime = TimeSpan.FromSeconds(TargetPhysicsTickTime);
+                    var currentTick = TimeSpan.FromMilliseconds(Environment.TickCount64);
+                    var timeSinceLastTick = currentTick - lastTick;
+                    var timeToNextStep = lastTick + targetStepTime - currentTick;
+
+                    // Adaptive sleep: only sleep if we have time budget remaining
+                    if (timeToNextStep.TotalMilliseconds > 1)
+                    {
+                        Thread.Sleep((int)timeToNextStep.TotalMilliseconds);
+                    }
+                    else if (timeToNextStep.TotalMilliseconds < -TargetPhysicsTps)
+                    {
+                        Logger.Warn($"Physics thread running slow in {SimulationWorld?.Name} at {timeSinceLastTick.TotalMilliseconds:F1} / {targetStepTime.TotalMilliseconds:F1} ms");
+                    }
+
+                    var physicsTotalDelta = TimeSpan.FromMilliseconds(Environment.TickCount64) - lastTick;
+                    lastTick = currentTick;
+                    _physicsLoopIndex++;
 
                     // 1. Process pending add/remove actions
                     while (_pendingActions.TryDequeue(out var action)) { action(); }
-
-                    var currentTick = TimeSpan.FromMilliseconds(Environment.TickCount64);
-                    var timeSinceLastTick = currentTick - lastTick;
-                    accumulatedTime += timeSinceLastTick;
-                    var steps = 0;
 
                     List<(RigidBody body, JVector vel, bool moving)> snapshot = [];
 
                     lock (_worldLock)
                     {
-
                         // 2. Take snapshot of bodies for state synchronization
                         foreach (var body in _bodies)
                         {
@@ -157,48 +199,27 @@ namespace AAEmu.Game.Core.Managers.World
                             snapshot.Add((body, vel, moving));
                         }
 
-                        // 3. Step the physics world
-                        // Potentially step multiple times to catch up if we were running behind.
-                        while (accumulatedTime > fixedStep)
+                        // 3. Step the physics world (single step with actual elapsed delta)
+                        try
                         {
-                            try
+                            if (_physWorld != null)
                             {
-                                // Проверяем, что физический мир существует перед выполнением шага
-                                if (_physWorld != null)
-                                {
-                                    _physWorld.Step((float)fixedStep.TotalSeconds, false);
-                                }
+                                _physWorld.Step((float)physicsTotalDelta.TotalSeconds, false);
                             }
-                            catch (AccessViolationException ex)
-                            {
-                                Logger.Error(ex, "AccessViolationException при выполнении шага физической симуляции. Попытка восстановления...");
-                                // В случае ошибки, можно попробовать пересоздать физический мир или пропустить этот шаг
-                                break; // Прерываем цикл, чтобы избежать повторного возникновения ошибки
-                            }
-                            catch (Exception ex)
-                            {
-                                Logger.Error(ex, "Произошла ошибка при выполнении шага физической симуляции");
-                                break; // Прерываем цикл при любой другой ошибке
-                            }
-
-                            accumulatedTime -= fixedStep;
-                            if (++steps >= MaxPhysicsSteps) { break; }
+                        }
+                        catch (AccessViolationException ex)
+                        {
+                            Logger.Error(ex, "AccessViolationException during physics step");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error(ex, "Error during physics step");
                         }
 
-                        lastTick = currentTick;
-
-                        // Total delta for this frame (clamped to max steps)
-                        var physicsTotalDelta = TimeSpan.FromSeconds(steps * fixedStep.TotalSeconds);
-
-                        // 4. Sync positions and broadcast outside lock
-                        foreach (var (body, velocity, isMoving) in snapshot)
+                        // 4. Per-ship processing
+                        var shipsThisTick = new List<Slave>();
+                        foreach (var (body, _, _) in snapshot)
                         {
-                            if (body.Tag is Npc npc)
-                            {
-                                // Update transform
-                                //UpdateNpcTransform(npc, velocity, isMoving);
-                            }
-
                             if (body.Tag is not Slave slave) { continue; }
 
                             try
@@ -210,31 +231,68 @@ namespace AAEmu.Game.Core.Managers.World
                                 if (slave.SpawnTime.AddSeconds(slave.Template.PortalTime) > DateTime.UtcNow)
                                     continue;
 
+                                // Skip dead ships
                                 if (slave.Hp <= 0)
                                 {
                                     body.SetActivationState(false);
                                     continue;
                                 }
 
-                                // Skip simulation if no rigidbody applied to slave
+                                // Skip simulation if body is inactive/sleeping
                                 if (!body.IsActive)
                                     continue;
 
-                                // Cache water surface, floor, and flow for this tick
-                                slave.CreateWaterAndLandSurfaceCache();
+                                // Only process ships (not mounts/pets)
+                                if (!_shipControllers.ContainsKey(slave.Id))
+                                    continue;
 
-                                var underPos = slave.Transform.World.Position + Vector3.UnitZ * -2f;
+                                // Cache water surface, floor, and flow (throttled)
+                                var xy = new Vector2(slave.Transform.World.Position.X, slave.Transform.World.Position.Y);
+                                var refreshCache = true;
+                                if (_waterLandCacheStamp.TryGetValue(slave.Id, out var stamp))
+                                {
+                                    var loopsSince = _physicsLoopIndex - stamp.Loop;
+                                    var movedSq = Vector2.DistanceSquared(xy, stamp.Xy);
+                                    refreshCache = loopsSince >= 2 || movedSq > 1f;
+                                }
+
+                                if (refreshCache)
+                                {
+                                    slave.CreateWaterAndLandSurfaceCache();
+                                    _waterLandCacheStamp[slave.Id] = (_physicsLoopIndex, xy);
+                                }
+
+                                // Sync rigid body position to game transform
+                                SyncTransformWithRigidBody(slave);
+
+                                // Process input smoothing and on-land physics
+                                BoatPhysicsTick(slave, physicsTotalDelta);
+
+                                // Harpoon rope tension tear check + recoil
+                                var dtSec = (float)physicsTotalDelta.TotalSeconds;
+                                var recoilDv = ShipHarpoonRopeController.TickTensionTearAndGetHullRecoilDeltaV(slave, dtSec);
+                                if (slave.RigidBody != null && (recoilDv.X * recoilDv.X + recoilDv.Y * recoilDv.Y) > 1e-8f)
+                                {
+                                    _ = new OneShotVelocityKick(_physWorld, slave.RigidBody, new JVector(recoilDv.X, 0f, recoilDv.Y));
+                                }
+
+                                // Resolve terrain/shore contacts (BEFORE force application and sending)
+                                _shipShore.ResolveTerrainContacts(slave, physicsTotalDelta, _physWorld);
+
+                                // Apply current/river drift as position offset (not force!) — only when not grounded
+                                var underPos = slave.Transform.World.Position + Vector3.UnitZ * (slave.ShipController?.ShipModel.MassBoxSizeZ ?? 1f) / -2f * slave.Scale;
                                 if (SimulationWorld.Water.IsWater(underPos, out var flowDirection) && flowDirection.LengthSquared() > 1e-10f)
                                 {
                                     slave.CachedWaterFlow = flowDirection;
-                                    var multiplier = slave.RigidBody.Mass * 3.15f;
-                                    slave.RigidBody.AddForce(new JVector(flowDirection.X * multiplier, flowDirection.Z * multiplier, flowDirection.Y * multiplier));
+                                    var groundedNow = slave.GroundContactLatched || slave.CachedFloorLevel > slave.CachedWaterSurface;
+                                    if (!groundedNow)
+                                    {
+                                        var dtFlow = (float)physicsTotalDelta.TotalSeconds;
+                                        slave.RigidBody.Position += new JVector(flowDirection.X * dtFlow, flowDirection.Z * dtFlow, flowDirection.Y * dtFlow);
+                                    }
                                 }
 
-                                SyncTransformWithRigidBody(slave);
-                                BoatPhysicsTick(slave, physicsTotalDelta);
-                                slave.ShipController?.ApplyForceAndTorque(slave, physicsTotalDelta);
-                                SendUpdatedMovementData(slave, body, physicsTotalDelta);
+                                shipsThisTick.Add(slave);
                             }
                             catch (Exception slaveException)
                             {
@@ -242,29 +300,129 @@ namespace AAEmu.Game.Core.Managers.World
                             }
                         }
 
-                        // Collect active ships for interaction resolution
-                        var shipsThisTick = new List<Slave>();
-                        foreach (var body2 in _bodies)
+                        // Rope controller expiry (runs even when hull is sleeping)
+                        foreach (var (body, _, _) in snapshot)
                         {
-                            if (body2?.Tag is Slave s && s.Hp > 0 && body2.IsActive && s.Transform.WorldId == SimulationWorld.Id)
-                                shipsThisTick.Add(s);
+                            if (body.Tag is not Slave slave)
+                                continue;
+                            try
+                            {
+                                if (slave.Transform.WorldId != SimulationWorld.Id)
+                                    continue;
+                                if (slave.SpawnTime.AddSeconds(slave.Template.PortalTime) > DateTime.UtcNow)
+                                    continue;
+                                if (!_shipControllers.ContainsKey(slave.Id))
+                                    continue;
+                                ShipHarpoonRopeController.TickHarpoonRopeControllerLifetime(slave);
+                            }
+                            catch (Exception slaveException)
+                            {
+                                Logger.Error($"PhysicsThread Error on Slave {slave.Id} {slave.Name} ({slave.ObjId}): {slaveException.Message}\n{slaveException.StackTrace}");
+                            }
                         }
 
-                        // Ship-to-ship, ship-to-shore, ship-to-cliff interactions
+                        // Apply forces AFTER terrain resolve so GroundContactLatched is current
+                        foreach (var slave in shipsThisTick)
+                        {
+                            try
+                            {
+                                slave.ShipController?.ApplyForceAndTorque(slave, physicsTotalDelta);
+                            }
+                            catch (Exception slaveException)
+                            {
+                                Logger.Error($"PhysicsThread Error on Slave {slave.Id} {slave.Name} ({slave.ObjId}): {slaveException.Message}\n{slaveException.StackTrace}");
+                            }
+                        }
+
+                        // Ship-to-ship collision
                         if (shipsThisTick.Count > 0)
                         {
-                            _shipShore.ResolveAll(SimulationWorld, shipsThisTick, physicsTotalDelta);
-                            _shipShip.ResolveAllPairs(shipsThisTick, physicsTotalDelta);
-                            _shipCliff.ResolveAll(SimulationWorld, shipsThisTick, physicsTotalDelta);
-                            _shipDoodad.ResolveAll(SimulationWorld, shipsThisTick, physicsTotalDelta);
-                            _shipBarrier.ResolveAll(SimulationWorld, shipsThisTick, physicsTotalDelta);
+                            try
+                            {
+                                _shipShip.ResolveAllPairs(shipsThisTick, physicsTotalDelta);
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.Error($"PhysicsThread ship-ship resolve: {e.Message}\n{e.StackTrace}");
+                            }
+
+                            try
+                            {
+                                foreach (var slave in shipsThisTick)
+                                    slave.StaticObstacleHullDamageContactActive = false;
+
+                                _shipDoodad.ResolveAll(SimulationWorld, shipsThisTick, physicsTotalDelta);
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.Error($"PhysicsThread ship-doodad resolve: {e.Message}\n{e.StackTrace}");
+                            }
+
+                            try
+                            {
+                                if (AppConfiguration.Instance.World.GeoDataMode && SimulationWorld.ShipStaticBarriers != null)
+                                {
+                                    foreach (var slave in shipsThisTick)
+                                    {
+                                        if (slave.RigidBody == null)
+                                            continue;
+                                        var p = slave.Transform.World.Position;
+                                        var cellX2 = (int)(p.X / WorldManager.CELL_SIZE);
+                                        var cellY2 = (int)(p.Y / WorldManager.CELL_SIZE);
+                                        ShipStaticBarrierBaiIngestor.EnsureCell(SimulationWorld, cellX2, cellY2);
+                                    }
+
+                                    _shipBarrier.ResolveAll(SimulationWorld, shipsThisTick, physicsTotalDelta);
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.Error($"PhysicsThread ship-barrier resolve: {e.Message}\n{e.StackTrace}");
+                            }
+
+                            try
+                            {
+                                _shipCliff.ResolveAll(SimulationWorld, shipsThisTick, physicsTotalDelta);
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.Error($"PhysicsThread ship-cliff resolve: {e.Message}\n{e.StackTrace}");
+                            }
+
+                            // Ship-pair harpoon tow impulses (after ship-ship so overlap doesn't zero the tow)
+                            try
+                            {
+                                ShipHarpoonTowPhysics.ApplyShipPairHarpoonTowImpulses(shipsThisTick, (float)physicsTotalDelta.TotalSeconds);
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.Error($"PhysicsThread ship-pair harpoon tow: {e.Message}\n{e.StackTrace}");
+                            }
 
                             // Tick damage accumulators
-                            foreach (var ship in shipsThisTick)
+                            foreach (var slave in shipsThisTick)
                             {
-                                ship.TickBeachedHullDamage(physicsTotalDelta);
-                                ship.TickStaticObstacleHullDamage(physicsTotalDelta);
-                                ship.StaticObstacleHullDamageContactActive = false;
+                                try
+                                {
+                                    slave.TickStaticObstacleHullDamage(physicsTotalDelta);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Error($"PhysicsThread static-obstacle hull damage: {ex.Message}\n{ex.StackTrace}");
+                                }
+                            }
+                        }
+
+                        // Send movement data AFTER all interactions are resolved (client sees corrected position)
+                        foreach (var slave in shipsThisTick)
+                        {
+                            try
+                            {
+                                SendUpdatedMovementData(slave, slave.RigidBody, physicsTotalDelta);
+                            }
+                            catch (Exception slaveException)
+                            {
+                                Logger.Error($"PhysicsThread Error on Slave {slave.Id} {slave.Name} ({slave.ObjId}): {slaveException.Message}\n{slaveException.StackTrace}");
                             }
                         }
                     }
@@ -286,12 +444,6 @@ namespace AAEmu.Game.Core.Managers.World
             var xDelta = slaveRigidBody.Position.X - slave.Transform.World.Position.X;
             var yDelta = slaveRigidBody.Position.Z - slave.Transform.World.Position.Y;
             var zDelta = slaveRigidBody.Position.Y - slave.Transform.World.Position.Z;
-            //if (zDelta < -3)
-            //{
-            //    slaveRigidBody.Position = slaveRigidBody.Position with { Y = slave.Transform.World.Position.Z };
-            //    zDelta = 0;
-            //    Logger.Info($"SyncTransformWithRigidBody {slave.Name} -> {SimulationWorld.Name}, _waterLevel={DefaultWaterLevel}, OceanLevel={SimulationWorld.OceanLevel}, slave.Position.Z={slave.Transform.World.Position.Z}");
-            //}
 
             slave.Transform.Local.Translate(xDelta, yDelta, zDelta);
             var rotation = slaveRigidBody.Orientation;
@@ -309,8 +461,6 @@ namespace AAEmu.Game.Core.Managers.World
 
             var pos = new JVector(slave.Transform.World.Position.X, slave.Transform.World.Position.Z, slave.Transform.World.Position.Y);
             var rot = JQuaternion.CreateRotationY(slave.Transform.World.Rotation.Z);
-            //                                       Width                   Length                  Height
-            //var dimensions = new JVector(shipModel.MassBoxSizeX, shipModel.MassBoxSizeY, shipModel.MassBoxSizeZ);
             var ctrl = new ShipController(world: _physWorld, shipModel: shipModel);
 
             ctrl.Build(initialPosition: pos, initialOrientation: rot);
@@ -334,50 +484,45 @@ namespace AAEmu.Game.Core.Managers.World
             EnqueueAddBody(slave.RigidBody);
             _buoyancy.AddForRectangularParallelepiped(slave.RigidBody, 3);
 
-            // Reset FinalizeTransform counter on spawn
-            _finalizeTransformTracker.Reset(slave.Id);
-
             Logger.Debug($"AddShip {slave.Name} -> {SimulationWorld.Name}");
         }
 
+        /// <summary>
+        /// Removes a ship from physics. Thread-safe: defers mutations to the physics thread.
+        /// </summary>
         public void RemoveShip(Slave slave)
         {
             if (slave.RigidBody == null) return;
 
             var rigidBody = slave.RigidBody;
-            rigidBody.SetActivationState(false);
-            EnqueueRemoveBody(rigidBody);
+            var slaveId = slave.Id;
+            var slaveRef = slave;
 
-            try
+            void RemoveFromPhysicsThread()
             {
-                if (_physWorld != null && rigidBody != null)
-                {
-                    _physWorld.Remove(rigidBody);
-                }
-            }
-            catch (AccessViolationException ex)
-            {
-                Logger.Error(ex, "AccessViolationException при удалении тела из физического мира");
-            }
+                // Second queued removal (same body): first lambda already nulled RigidBody.
+                if (slaveRef.RigidBody != rigidBody)
+                    return;
 
-            try
-            {
-                if (_buoyancy != null && rigidBody != null)
-                {
-                    _buoyancy.Remove(rigidBody);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Ошибка при удалении тела из системы буйности");
+                rigidBody.SetActivationState(false);
+                _physWorld.Remove(rigidBody);
+                _buoyancy.Remove(rigidBody);
+                _bodies.Remove(rigidBody);
+                _shipControllers.Remove(slaveId);
+                _waterLandCacheStamp.Remove(slaveId);
+
+                slaveRef.RigidBody = null;
+                slaveRef.ShipController = null;
             }
 
-            _shipControllers.Remove(slave.Id);
-            slave.ShipController = null;
-            slave.RigidBody = null;
-
-            // Cleanup FinalizeTransform counter
-            _finalizeTransformTracker.Remove(slave.Id);
+            if (!ThreadRunning)
+            {
+                RemoveFromPhysicsThread();
+            }
+            else
+            {
+                _pendingActions.Enqueue(RemoveFromPhysicsThread);
+            }
 
             Logger.Debug($"RemoveShip {slave.Name} <- {SimulationWorld.Name}");
         }
@@ -620,22 +765,18 @@ namespace AAEmu.Game.Core.Managers.World
         {
             ThreadRunning = false;
 
-            // Дожидаемся завершения потока физики, если он существует
             if (_thread != null && _thread.IsAlive)
             {
                 try
                 {
-                    // Даем потоку немного времени на завершение
                     if (!_thread.Join(TimeSpan.FromSeconds(5)))
                     {
-                        Logger.Warn("Физический поток не завершился вовремя, прерывание...");
-                        // В .NET Core/Framework не рекомендуется использовать Abort(),
-                        // но в крайних случаях это может помочь избежать зависания
+                        Logger.Warn("Physics thread did not terminate in time");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error(ex, "Ошибка при ожидании завершения физического потока");
+                    Logger.Error(ex, "Error waiting for physics thread");
                 }
             }
         }
@@ -648,11 +789,11 @@ namespace AAEmu.Game.Core.Managers.World
             }
             catch (AccessViolationException ex)
             {
-                Logger.Error(ex, "AccessViolationException при освобождении физического мира");
+                Logger.Error(ex, "AccessViolationException disposing physics world");
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Ошибка при освобождении физического мира");
+                Logger.Error(ex, "Error disposing physics world");
             }
         }
 
@@ -661,9 +802,6 @@ namespace AAEmu.Game.Core.Managers.World
             return SimulationWorld?.IsWater(new Vector3(area.X, area.Z, area.Y), out _) ?? area.Y <= (SimulationWorld?.OceanLevel ?? DefaultWaterLevel);
         }
 
-        /// <summary>
-        /// Enqueues an NPC body to be added in the next physics step.
-        /// </summary>
         public void EnqueueAddBody(RigidBody body)
         {
             if (body == null) return;
@@ -673,9 +811,6 @@ namespace AAEmu.Game.Core.Managers.World
             });
         }
 
-        /// <summary>
-        /// Enqueues an NPC body to be removed in the next physics step.
-        /// </summary>
         public void EnqueueRemoveBody(RigidBody body)
         {
             if (body == null) return;
@@ -688,7 +823,7 @@ namespace AAEmu.Game.Core.Managers.World
         public static float GetRollAngle(JMatrix orientation)
         {
             var yawPitchRoll = GetYawPitchRollFromJMatrix(orientation);
-            return yawPitchRoll.Item2; // Roll angle in radians
+            return yawPitchRoll.Item2;
         }
 
         public static (float, float, float) GetYawPitchRollFromJMatrix(JMatrix mat)
@@ -702,45 +837,5 @@ namespace AAEmu.Game.Core.Managers.World
 
             return new Quaternion() { X = jq.X, Y = jq.Y, Z = jq.Z, W = jq.W };
         }
-
     }
 }
-
-// --- Новый helper-класс ---
-public class LimitedCallTracker
-{
-    private readonly Dictionary<uint, int> _callCounts = new();
-    private readonly int _maxCalls;
-
-    public LimitedCallTracker(int maxCalls = 5)
-    {
-        _maxCalls = maxCalls;
-    }
-
-    // Returns true if call is allowed (increments counter)
-    public bool TryCall(uint id)
-    {
-        var count = _callCounts.GetValueOrDefault(id, 0);
-
-        if (count < _maxCalls)
-        {
-            _callCounts[id] = count + 1;
-            return true;
-        }
-
-        return false;
-    }
-
-    // Reset counter for object (e.g. on spawn)
-    public void Reset(uint id)
-    {
-        _callCounts[id] = 0;
-    }
-
-    // Remove counter for object (e.g. on despawn)
-    public void Remove(uint id)
-    {
-        _callCounts.Remove(id);
-    }
-}
-
