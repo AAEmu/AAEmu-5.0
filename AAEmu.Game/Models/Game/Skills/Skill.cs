@@ -517,15 +517,11 @@ public class Skill
             case SkillTargetType.Pos:
                 {
                     target = SetInitialTarget(caster, targetCaster);
-                    if (caster.ObjId == target.ObjId)
-                        return null; //TODO отправлять ошибку?
                     break;
                 }
             case SkillTargetType.BallisticPos:
                 {
                     target = SetInitialTarget(caster, targetCaster);
-                    if (caster.ObjId == target.ObjId)
-                        return null; //TODO отправлять ошибку?
                     break;
                 }
             case SkillTargetType.Party:
@@ -541,8 +537,6 @@ public class Skill
             case SkillTargetType.RelativePos:
                 {
                     target = SetInitialTarget(caster, targetCaster);
-                    if (caster.ObjId == target.ObjId)
-                        return null; //TODO отправлять ошибку?
                     break;
                 }
             case SkillTargetType.SourcePos:
@@ -550,8 +544,6 @@ public class Skill
             case SkillTargetType.ArtilleryPos:
                 {
                     target = SetInitialTarget(caster, targetCaster);
-                    if (caster.ObjId == target.ObjId)
-                        return null; //TODO отправлять ошибку?
                     break;
                 }
             case SkillTargetType.CursorPos:
@@ -603,10 +595,8 @@ public class Skill
     {
         var positionUnit = new BaseUnit();
         positionUnit.ObjId = uint.MaxValue;
-        Logger.Debug($"SetInitialTarget: targetCaster type={targetCaster?.GetType().Name}, caster={caster.Name} ({caster.ObjId})");
 
-        // Для позиционных скиллов клиент отправляет мировые координаты
-        // Нужно создать трансформ с правильными мировыми координатами, а не клонировать кастера
+        // Клиент отправляет мировые координаты — берём их напрямую, не клонируем позицию кастера
         float worldPosX = caster.Transform.World.Position.X;
         float worldPosY = caster.Transform.World.Position.Y;
         float worldPosZ = caster.Transform.World.Position.Z;
@@ -614,64 +604,54 @@ public class Skill
         switch (targetCaster)
         {
             case SkillCastPositionTarget positionTarget:
-                {
-                    worldPosX = positionTarget.PosX;
-                    worldPosY = positionTarget.PosY;
-                    worldPosZ = positionTarget.PosZ;
-                    break;
-                }
+                worldPosX = positionTarget.PosX;
+                worldPosY = positionTarget.PosY;
+                worldPosZ = positionTarget.PosZ;
+                break;
             case SkillCastPosition2Target position2Target:
-                {
-                    worldPosX = position2Target.PosX;
-                    worldPosY = position2Target.PosY;
-                    worldPosZ = position2Target.PosZ;
-                    break;
-                }
+                worldPosX = position2Target.PosX;
+                worldPosY = position2Target.PosY;
+                worldPosZ = position2Target.PosZ;
+                break;
             case SkillCastPosition3Target position3Target:
-                {
-                    worldPosX = position3Target.PosX;
-                    worldPosY = position3Target.PosY;
-                    worldPosZ = position3Target.PosZ;
-                    break;
-                }
-            case SkillCastDoodadTarget doodadTarget:
-                break;
-            case SkillCastItemTarget itemTarget:
-                break;
-            case SkillCastUnitTarget unitTarget:
+                worldPosX = position3Target.PosX;
+                worldPosY = position3Target.PosY;
+                worldPosZ = position3Target.PosZ;
                 break;
         }
 
-        // Создаём трансформ с мировыми координатами
         positionUnit.Transform = new Transform(null, null, caster.Transform.WorldId, caster.Transform.ZoneId, 0, worldPosX, worldPosY, worldPosZ, 0f, 0f, 0f);
         positionUnit.Region = WorldManager.Instance.GetRegion(positionUnit);
 
-        // Для дудадов на кораблях (например, гарпун), Transform.Parent может быть null
-        // но нужно вычислить мировые координаты относительно корабля
-        var casterWorldPos = caster.Transform.World.Position;
-
-        // Если это дудад с локальными координатами (worldPos == localPos), найдем корабль по OwnerId
-        if (caster is DoodadObj.Doodad doodad &&
-            casterWorldPos.X == caster.Transform.Local.Position.X &&
-            casterWorldPos.Y == caster.Transform.Local.Position.Y)
+        if (Logger.IsDebugEnabled)
         {
-            // Гарпун на корабле - попробуем найти корабль через владельца
-            var shipParent = WorldManager.Instance.GetUnit(doodad.OwnerObjId);
-            if (shipParent != null)
+            // Для дудадов на кораблях (гарпун) Transform.World может содержать локальные координаты,
+            // поэтому пересчитываем реальную мировую позицию кастера через владельца (корабль)
+            var casterWorldPos = caster.Transform.World.Position;
+            if (caster is DoodadObj.Doodad doodad &&
+                casterWorldPos.X == caster.Transform.Local.Position.X &&
+                casterWorldPos.Y == caster.Transform.Local.Position.Y)
             {
-                var shipWorldPos = shipParent.Transform.World.Position;
-                casterWorldPos = new Vector3(
-                    shipWorldPos.X + caster.Transform.Local.Position.X,
-                    shipWorldPos.Y + caster.Transform.Local.Position.Y,
-                    shipWorldPos.Z + caster.Transform.Local.Position.Z
-                );
-                Logger.Debug($"SetInitialTarget: garpun on ship, ship={shipParent.Name} shipWorldPos=({shipWorldPos.X:F2}, {shipWorldPos.Y:F2}, {shipWorldPos.Z:F2}), adjusted casterWorldPos=({casterWorldPos.X:F2}, {casterWorldPos.Y:F2}, {casterWorldPos.Z:F2})");
+                var shipParent = WorldManager.Instance.GetUnit(doodad.OwnerObjId);
+                if (shipParent != null)
+                {
+                    var shipWorldPos = shipParent.Transform.World.Position;
+                    casterWorldPos = new Vector3(
+                        shipWorldPos.X + caster.Transform.Local.Position.X,
+                        shipWorldPos.Y + caster.Transform.Local.Position.Y,
+                        shipWorldPos.Z + caster.Transform.Local.Position.Z
+                    );
+                    Logger.Debug("SetInitialTarget: harpoon on ship={0}, shipWorldPos=({1:F2},{2:F2},{3:F2}), casterWorldPos=({4:F2},{5:F2},{6:F2})",
+                        shipParent.Name, shipWorldPos.X, shipWorldPos.Y, shipWorldPos.Z,
+                        casterWorldPos.X, casterWorldPos.Y, casterWorldPos.Z);
+                }
             }
-        }
 
-        var targetDist = MathUtil.CalculateDistance(casterWorldPos, positionUnit.Transform.World.Position, true);
-        Logger.Debug($"SetInitialTarget result: target=({positionUnit.Transform.World.Position.X:F2}, {positionUnit.Transform.World.Position.Y:F2}, {positionUnit.Transform.World.Position.Z:F2}), distance={targetDist:F2}m");
-        Logger.Debug($"SetInitialTarget caster: worldPos=({casterWorldPos.X:F2}, {casterWorldPos.Y:F2}, {casterWorldPos.Z:F2})");
+            var targetPos = positionUnit.Transform.World.Position;
+            var dist = MathUtil.CalculateDistance(casterWorldPos, targetPos, true);
+            Logger.Debug("SetInitialTarget: caster={0} ({1}), target=({2:F2},{3:F2},{4:F2}), dist={5:F2}m, targetCaster={6}",
+                caster.Name, caster.ObjId, targetPos.X, targetPos.Y, targetPos.Z, dist, targetCaster?.GetType().Name);
+        }
 
         return positionUnit;
     }
