@@ -1,5 +1,73 @@
 # CHANGELOG - AAEmu 5.0.7.0 Private Server
 
+## [5.0.7.0 private] - 31.05.2026
+
+### Refactoring / Рефакторинг
+
+**refactor(skills): устранить замечания код-ревью позиционных скиллов**
+
+На русском:
+- Убраны мёртвые проверки `caster.ObjId == target.ObjId` в Pos/BallisticPos/ArtilleryPos/RelativePos — условие никогда не выполнялось
+- Debug-логирование и логика определения позиции корабля (гарпун) обёрнуты в `if (Logger.IsDebugEnabled)` — устраняет накладные расходы в production
+- Заменена `$""` string interpolation в Debug-вызовах на `Logger.Debug(format, args)`
+- Убраны неиспользуемые `case` из switch в `SetInitialTarget` (были no-op break)
+- Упрощены фигурные скобки в case-блоках switch
+
+English:
+- Removed dead `caster.ObjId == target.ObjId` checks in Pos/BallisticPos/ArtilleryPos/RelativePos — condition never triggered
+- Wrapped Logger.Debug calls and ship-position logic (harpoon) in `if (Logger.IsDebugEnabled)` — eliminates string interpolation overhead in production
+- Replaced `$""` string interpolation in Debug calls with `Logger.Debug(format, args)`
+- Removed unused no-op `case` entries from `SetInitialTarget` switch
+- Simplified curly braces in switch case blocks
+
+---
+
+### Bug Fixes / Исправления
+
+**fix(skills): улучшить обработку позиционных скиллов на кораблях**
+
+На русском:
+- Сохранять `PositionTarget` в `SCSkillFiredPacket` для прицельных скиллов
+- Исправить обработку RelativePos скиллов (гарпун и подобные)
+- Добавить поддержку `SkillCastPosition2Target` и `SkillCastPosition3Target`
+- Исправить вычисление координат для дудадов на кораблях
+
+English:
+- Save `PositionTarget` in `SCSkillFiredPacket` for aimed skills
+- Fix RelativePos skill processing (harpoon and similar)
+- Add support for `SkillCastPosition2Target` and `SkillCastPosition3Target`
+- Fix coordinate calculation for doodads on ships
+
+---
+
+**fix(physics): исправить портирование кода корабельной физики из 1.2**
+
+На русском:
+- Изменён TPS с 100 на 25 (читается из конфига `AppConfiguration`)
+- Заменён `Thread.Sleep` в начале цикла на адаптивный sleep в конце
+- Цикл физики изменён с accumulation (до 4 шагов) на single-step с фактическим elapsed delta
+- Исправлен порядок операций: `ShoreResolve` до `ApplyForceAndTorque`, `SendMovementData` после всех взаимодействий
+- Водный поток применяется как position offset (`RigidBody.Position +=`), а не как сила
+- Водный поток применяется только когда корабль не на земле (`!GroundContactLatched`)
+- Подключена интеграция `ShipHarpoonRopeController` в 5 точках: `CSStartSkillPacket`, `CSSkillControllerStatePacket`, `SlaveManager`, `CSUnhangPacket`, `PhysicsManager`
+- Реализован полный `InitializeTerrain`: загрузка heightmap в физический мир
+- Исправлен `RemoveShip`: деферится к physics thread через queue (thread-safe)
+- Документация: Docs/ship-physics-port-fixes-2026-05-31.md
+
+English:
+- Changed TPS from 100 to 25 (read from `AppConfiguration`)
+- Replaced unconditional `Thread.Sleep` at loop start with adaptive sleep at end
+- Physics loop changed from accumulation (up to 4 steps) to single-step with actual elapsed delta
+- Fixed operation order: `ShoreResolve` before `ApplyForceAndTorque`, `SendMovementData` after all interactions
+- Water flow applied as position offset (`RigidBody.Position +=`) instead of force
+- Water flow only applied when ship is not grounded (`!GroundContactLatched`)
+- Integrated `ShipHarpoonRopeController` at 5 points: `CSStartSkillPacket`, `CSSkillControllerStatePacket`, `SlaveManager`, `CSUnhangPacket`, `PhysicsManager`
+- Implemented full `InitializeTerrain`: heightmap loading into physics world
+- Fixed `RemoveShip`: now deferred to physics thread via queue (thread-safe)
+- Documentation: Docs/ship-physics-port-fixes-2026-05-31.md
+
+---
+
 ## [5.0.7.0 private] - 30.05.2026
 
 ### Refactoring / Рефакторинг
@@ -185,7 +253,7 @@ English:
 ## Информация / Information
 
 **Версия сервера / Server version:** 5.0.7.0 private  
-**Последнее обновление / Last updated:** 30.05.2026  
+**Последнее обновление / Last updated:** 31.05.2026  
 **Ветка / Branch:** client_version/5.0_client_(2018-12-25)
 
 ---
