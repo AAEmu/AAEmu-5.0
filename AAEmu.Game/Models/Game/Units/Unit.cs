@@ -25,6 +25,7 @@ using AAEmu.Game.Models.Game.Skills.Static;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Static;
 using AAEmu.Game.Models.Game.Units.Route;
+using AAEmu.Game.Models.Game.Units.slaves;
 using AAEmu.Game.Models.Game.Units.Static;
 using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Models.Game.World.Transform;
@@ -303,10 +304,24 @@ public class Unit : BaseUnit, IUnit
         base.SetPosition(x, y, z, rotationX, rotationY, rotationZ);
 
         var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.WorldId)?.OceanLevel - 2f ?? 98f;
-        if (!IsUnderWater && Transform.World.Position.Z < worldDrownThreshold)
+
+        // Если персонаж на кораблле, проверяем дыхание только если он ВНУТРИ корабля (Local.Z < -5)
+        // Палуба корабля обычно на высоте ~0-10 от центра, поэтому отрицательные значения = под палубой/внутри
+        var shouldCheckBreathing = !(ParentObj is Slave slave && Transform.Local.Position.Z >= -5f);
+        var newUnderWaterState = shouldCheckBreathing && Transform.World.Position.Z < worldDrownThreshold;
+
+        if (!IsUnderWater && newUnderWaterState)
+        {
+            if (this is Character character)
+                Logger.Debug($"[SetPosition] Character {character.Name} entering water: Z={Transform.World.Position.Z}, Threshold={worldDrownThreshold}, Local.Z={Transform.Local.Position.Z}, ParentObj={ParentObj?.GetType().Name ?? "null"}");
             IsUnderWater = true;
-        else if (IsUnderWater && Transform.World.Position.Z > worldDrownThreshold)
+        }
+        else if (IsUnderWater && !newUnderWaterState)
+        {
+            if (this is Character character)
+                Logger.Debug($"[SetPosition] Character {character.Name} leaving water: Z={Transform.World.Position.Z}, Threshold={worldDrownThreshold}, Local.Z={Transform.Local.Position.Z}, ParentObj={ParentObj?.GetType().Name ?? "null"}");
             IsUnderWater = false;
+        }
     }
 
     public bool CheckMovedPosition(Vector3 oldPosition)

@@ -175,6 +175,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
             return;
         }
 
+        Logger.Debug($"[BreathTick] Character {character.Name} is drowning: WorldPos={character.Transform.World.Position}, IsUnderWater={character.IsUnderWater}, ParentObj={character.ParentObj?.GetType().Name ?? "null"}");
         character.DoChangeBreath();
     }
 

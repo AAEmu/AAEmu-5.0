@@ -1575,9 +1575,15 @@ public partial class Character : Unit, ICharacter
         base.SetPosition(x, y, z, rotationX, rotationY, rotationZ);
 
         var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.WorldId)?.OceanLevel - 2f ?? 98f;
-        if (!IsUnderWater && Transform.World.Position.Z < worldDrownThreshold)
+
+        // Если персонаж на кораблле, проверяем дыхание только если он ВНУТРИ корабля (Local.Z < -5)
+        // Палуба корабля обычно на высоте ~0-10 от центра, поэтому отрицательные значения = под палубой/внутри
+        var shouldCheckBreathing = !(ParentObj is Slave slave && Transform.Local.Position.Z >= -5f);
+        var newUnderWaterState = shouldCheckBreathing && Transform.World.Position.Z < worldDrownThreshold;
+
+        if (!IsUnderWater && newUnderWaterState)
             IsUnderWater = true;
-        else if (IsUnderWater && Transform.World.Position.Z > worldDrownThreshold)
+        else if (IsUnderWater && !newUnderWaterState)
             IsUnderWater = false;
 
         // Connection.ActiveChar.SendDebugMessage("Move New Pos: {0}", Transform.ToString());

@@ -2,9 +2,31 @@
 
 ## [5.0.7.0 private] - 31.05.2026
 
+### Bug Fixes / Исправления
+
+**fix(ship-breathing): не проверять дыхание персонажа на палубе корабля** (b919a2392)
+
+На русском:
+- Исправлена проблема, когда персонаж задыхался, находясь на палубе корабля
+- Причина: система проверяла глобальную Z координату, но не учитывала, что персонаж на ПАЛУБЕ корабля
+- Пример: корабль на высоте 91, палуба на +6 от центра → глобальная Z = 97 < пороговое значение (98) → ошибочное дыхание
+- Решение: если персонаж на кораблле (ParentObj is Slave), проверяем дыхание только если Local.Z < -5 (внутри корабля)
+- На палубе или выше (Local.Z >= -5) персонаж не может быть под водой
+
+English:
+- Fixed character drowning while standing on ship deck
+- Root cause: breathing check compared global Z coordinate without considering character was ON deck
+- Example: ship at height 91, deck at +6 from center → global Z = 97 < threshold (98) → false drowning
+- Solution: if character on ship (ParentObj is Slave), only check breathing if Local.Z < -5 (inside ship)
+- On deck or above (Local.Z >= -5) character cannot be underwater
+
+Files changed: `AAEmu.Game/Models/Game/Units/Unit.cs`, `AAEmu.Game/Models/Game/Char/Character.cs`
+
+---
+
 ### Refactoring / Рефакторинг
 
-**refactor(skills): устранить замечания код-ревью позиционных скиллов**
+**refactor(skills): устранить замечания код-ревью позиционных скиллов** (c8e659f7d)
 
 На русском:
 - Убраны мёртвые проверки `caster.ObjId == target.ObjId` в Pos/BallisticPos/ArtilleryPos/RelativePos — условие никогда не выполнялось
@@ -22,9 +44,7 @@ English:
 
 ---
 
-### Bug Fixes / Исправления
-
-**fix(skills): улучшить обработку позиционных скиллов на кораблях**
+**fix(skills): улучшить обработку позиционных скиллов на кораблях** (2db63c9f4)
 
 На русском:
 - Сохранять `PositionTarget` в `SCSkillFiredPacket` для прицельных скиллов
@@ -40,7 +60,7 @@ English:
 
 ---
 
-**fix(physics): исправить портирование кода корабельной физики из 1.2**
+**fix(physics): исправить портирование кода корабельной физики из 1.2** (b898174d6)
 
 На русском:
 - Изменён TPS с 100 на 25 (читается из конфига `AppConfiguration`)
@@ -72,7 +92,7 @@ English:
 
 ### Refactoring / Рефакторинг
 
-**refactor(physics): заменить проверку IsStatic на MotionType в физических компонентах**
+**refactor(physics): заменить проверку IsStatic на MotionType в физических компонентах** (f53d15f05)
 
 На русском:
 - Обновлены пакеты NuGet (Jitter2, Microsoft.*, NLog, NLua) до последних версий
@@ -92,11 +112,9 @@ English:
 
 ---
 
-## [5.0.7.0 private] - 30.05.2026
-
 ### Features / Особенности
 
-**feat(physics): портировать полную морскую механику кораблей из develop 1.2**
+**feat(physics): портировать полную морскую механику кораблей из develop 1.2** (6f19a1e45)
 
 На русском:
 - Физический движок Jitter2 с настраиваемым TPS (TargetPhysicsTps)
@@ -126,7 +144,7 @@ English:
 
 ### Bug Fixes / Исправления
 
-**fix(баффы): исправить использование биотоплива транспорта**
+**fix(баффы): исправить использование биотоплива транспорта** (37d72cb31)
 
 На русском:
 - Корректно обрабатывает BuffStackRule.Extend при повторном применении баффа
@@ -148,11 +166,21 @@ English:
 
 ---
 
+**fix(game): наследная последовательность воспроизводится только для игрока** (cdaef8d5a)
+
+На русском:
+- Исправлена проблема, когда наследная последовательность воспроизводилась неправильно
+
+English:
+- Fixed heir sequence playback logic
+
+---
+
 ## [5.0.7.0 private] - 25.04.2026
 
 ### Bug Fixes / Исправления
 
-**fix(skills): восстановить автоматический полив из цистерны**
+**fix(skills): восстановить автоматический полив из цистерны** (e6b84866a)
 
 На русском:
 - Сопоставить SCSkillFired для mount-навыков с packet capture
@@ -172,7 +200,7 @@ English:
 
 ### Refactoring / Рефакторинг
 
-**refactor: рефакторинг обработки навыков в CSStartSkillPacket**
+**refactor: рефакторинг обработки навыков в CSStartSkillPacket** (c38a911b5)
 
 На русском:
 - Переработана логика обработки скиллов в пакете начала скилла
@@ -188,7 +216,7 @@ English:
 
 ### Features / Особенности
 
-**feat: Add SCPlaySequencePacket and play heir level up sequence**
+**feat: Add SCPlaySequencePacket and play heir level up sequence** (4dda2581c)
 
 На русском:
 - Добавлен пакет SCPlaySequencePacket для воспроизведения анимационных последовательностей
@@ -202,7 +230,7 @@ English:
 
 ### Bug Fixes / Исправления
 
-**fix: исправить DoodadFuncRatioChange, DoodadFuncRatioRespawn**
+**fix: исправить DoodadFuncRatioChange, DoodadFuncRatioRespawn** (e24fae73f)
 
 На русском:
 - Исправлена логика изменения ratio для дудадов
@@ -214,7 +242,7 @@ English:
 
 ---
 
-**fix: Fix housing doodad restart placeholders**
+**fix: Fix housing doodad restart placeholders** (701dd7137)
 
 На русском:
 - Исправлены плейсхолдеры перезапуска жилых дудадов
@@ -224,7 +252,7 @@ English:
 
 ---
 
-**fix: исправление вращения домов и реорганизация тестов**
+**fix: исправление вращения домов и реорганизация тестов** (c6a9cefe0)
 
 На русском:
 - Исправлена логика вращения домов
@@ -260,18 +288,38 @@ English:
 
 ## Commit History / История коммитов
 
-### 413bb59c3 - docs: обновить CHANGELOG с информацией о рефакторинге физических компонентов
+### 2026-05-31
 
-**refactor(physics): заменить проверку IsStatic на MotionType в физических компонентах**
+- **b919a2392** - fix(ship-breathing): не проверять дыхание персонажа на палубе корабля
+- **8fa9a82fb** - docs: обновить CHANGELOG коммитами от 31.05.2026
+- **c8e659f7d** - refactor(skills): устранить замечания код-ревью позиционных скиллов
+- **2db63c9f4** - fix(skills): улучшить обработку позиционных скиллов на кораблях
+- **b898174d6** - fix(physics): исправить портирование кода корабельной физики из 1.2
 
-- Обновлены пакеты NuGet (Jitter2, Microsoft.*, NLog, NLua) до последних версий
-- Заменено использование свойства IsStatic на MotionType в файлах физики
+### 2026-05-30
 
-### f53d15f05 - refactor: заменить проверку IsStatic на MotionType в физических компонентах
+- **042df0a73** - docs: обновить CHANGELOG с информацией о рефакторинге физических компонентов
+- **f53d15f05** - refactor: заменить проверку IsStatic на MotionType в физических компонентах
+- **a90c5b521** - add: добавить CHANGELOG.md
+- **6f19a1e45** - feat(physics): портировать полную морскую механику кораблей из develop 1.2
 
-- Обновлены пакеты NuGet (Jitter2, Microsoft.*, NLog, NLua) до последних версий
-- Заменено использование свойства IsStatic на MotionType в файлах:
-  - AAEmu.Game/Physics/Forces/Buoyancy.cs
-  - AAEmu.Game/Physics/Forces/OneShotVelocityKick.cs
-  - AAEmu.Game/Physics/ShipController.cs
-  - AAEmu.Game/Physics/Terrain.cs
+### 2026-04-27
+
+- **37d72cb31** - fix(баффы): исправить использование биотоплива транспорта
+- **cdaef8d5a** - fix(game): наследная последовательность воспроизводится только для игрока
+
+### 2026-04-25
+
+- **e6b84866a** - fix(skills): восстановить автоматический полив из цистерны
+- **c38a911b5** - refactor: рефакторинг обработки навыков в CSStartSkillPacket
+
+### 2026-04-24
+
+- **4dda2581c** - Add SCPlaySequencePacket and play heir level up sequence
+- **e24fae73f** - fix: исправить DoodadFuncRatioChange, DoodadFuncRatioRespawn
+- **701dd7137** - Fix housing doodad restart placeholders
+- **c6a9cefe0** - fix: исправление вращения домов и переorganization тестов
+
+### 2026-04-19
+
+- **0850991d1** - Fix mail for tax (#38)

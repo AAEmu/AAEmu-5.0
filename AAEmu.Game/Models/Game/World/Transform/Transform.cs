@@ -8,6 +8,7 @@ using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.slaves;
+using NLog;
 
 // INFO
 // https://www.versluis.com/2020/09/what-is-yaw-pitch-and-roll-in-3d-axis-values/
@@ -22,6 +23,8 @@ namespace AAEmu.Game.Models.Game.World.Transform;
 /// </summary>
 public class Transform : IDisposable
 {
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
+
     private GameObject _owningObject;
     private uint _worldId = WorldManager.DefaultWorldId;
     private uint _instanceId = WorldManager.DefaultInstanceId;
@@ -276,6 +279,9 @@ public class Transform : IDisposable
 
             if ((parent == null) || (!parent.Equals(_parentTransform)))
             {
+                // Сохраняем текущую глобальную позицию перед сменой родителя
+                var currentWorldPos = GetWorldPosition();
+
                 if (_parentTransform != null)
                     _parentTransform.InternalDetachChild(this);
                 /*
@@ -308,6 +314,34 @@ public class Transform : IDisposable
 
                 _parentTransform = parent;
                 _parentTransform?.InternalAttachChild(this);
+
+                // Пересчитываем локальную позицию, чтобы глобальная позиция осталась прежней
+                if (_parentTransform != null)
+                {
+                    var parentWorldPos = _parentTransform.GetWorldPosition();
+                    var parentQuatRotation = parentWorldPos.ToQuaternion();
+                    var parentScale = _parentTransform.GameObject is BaseUnit u ? u.Scale : 1f;
+
+                    // Local = (World - Parent.World) / (Parent.Rotation * Parent.Scale)
+                    var deltaPos = currentWorldPos.Position - parentWorldPos.Position;
+                    var unrotatedDelta = Vector3.Transform(deltaPos, Quaternion.Inverse(parentQuatRotation));
+                    _localPosRot.Position = unrotatedDelta / parentScale;
+
+                    // Пересчитываем также ротацию
+                    var childWorldRotation = currentWorldPos.ToQuaternion();
+                    var localRotation = Quaternion.Inverse(parentQuatRotation) * childWorldRotation;
+                    _localPosRot.ApplyFromQuaternion(localRotation);
+
+                    if (_owningObject is Character aCharacter)
+                    {
+                        Logger.Debug($"[SetParent] Character {aCharacter.Name}: OldWorldPos={currentWorldPos.Position}, ParentWorldPos={parentWorldPos.Position}, NewLocalPos={_localPosRot.Position}, NewWorldPos={GetWorldPosition().Position}");
+                    }
+                }
+                else
+                {
+                    // Если родителя больше нет, локальные координаты = глобальным
+                    _localPosRot = currentWorldPos;
+                }
 
                 if ((_owningObject is Character aPlayer))
                     aPlayer.SendDebugMessage($"NewPos: {ToFullString(true, true)}");
