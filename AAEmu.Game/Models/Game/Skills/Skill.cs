@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 
 using AAEmu.Commons.Utils;
@@ -29,6 +30,7 @@ using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Skills.Utils;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.slaves;
+using AAEmu.Game.Models.Game.World.Transform;
 using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Models.Tasks.Skills;
 using AAEmu.Game.Utils;
@@ -537,7 +539,12 @@ public class Skill
             case SkillTargetType.SummonPos:
                 break;
             case SkillTargetType.RelativePos:
-                break;
+                {
+                    target = SetInitialTarget(caster, targetCaster);
+                    if (caster.ObjId == target.ObjId)
+                        return null; //TODO отправлять ошибку?
+                    break;
+                }
             case SkillTargetType.SourcePos:
                 break;
             case SkillTargetType.ArtilleryPos:
@@ -596,36 +603,75 @@ public class Skill
     {
         var positionUnit = new BaseUnit();
         positionUnit.ObjId = uint.MaxValue;
-        positionUnit.Transform = caster.Transform.CloneDetached(positionUnit);
+        Logger.Debug($"SetInitialTarget: targetCaster type={targetCaster?.GetType().Name}, caster={caster.Name} ({caster.ObjId})");
+
+        // Для позиционных скиллов клиент отправляет мировые координаты
+        // Нужно создать трансформ с правильными мировыми координатами, а не клонировать кастера
+        float worldPosX = caster.Transform.World.Position.X;
+        float worldPosY = caster.Transform.World.Position.Y;
+        float worldPosZ = caster.Transform.World.Position.Z;
+
         switch (targetCaster)
         {
+            case SkillCastPositionTarget positionTarget:
+                {
+                    worldPosX = positionTarget.PosX;
+                    worldPosY = positionTarget.PosY;
+                    worldPosZ = positionTarget.PosZ;
+                    break;
+                }
+            case SkillCastPosition2Target position2Target:
+                {
+                    worldPosX = position2Target.PosX;
+                    worldPosY = position2Target.PosY;
+                    worldPosZ = position2Target.PosZ;
+                    break;
+                }
+            case SkillCastPosition3Target position3Target:
+                {
+                    worldPosX = position3Target.PosX;
+                    worldPosY = position3Target.PosY;
+                    worldPosZ = position3Target.PosZ;
+                    break;
+                }
             case SkillCastDoodadTarget doodadTarget:
                 break;
             case SkillCastItemTarget itemTarget:
                 break;
             case SkillCastUnitTarget unitTarget:
                 break;
-            case SkillCastPositionTarget positionTarget:
-                {
-                    if (caster is Npc { CurrentTarget: not null } npc)
-                        positionUnit.Transform.Local.SetPosition(npc.CurrentTarget.Transform.Local.Position.X, npc.CurrentTarget.Transform.Local.Position.Y, npc.CurrentTarget.Transform.Local.Position.Z);
-                    else
-                        positionUnit.Transform.Local.SetPosition(positionTarget.PosX, positionTarget.PosY, positionTarget.PosZ);
-                    break;
-                }
-            case SkillCastPosition2Target position2Target:
-                {
-                    positionUnit.Transform.Local.SetPosition(position2Target.PosX, position2Target.PosY, position2Target.PosZ);
-                    break;
-                }
-            case SkillCastPosition3Target position3Target:
-                {
-                    positionUnit.Transform.Local.SetPosition(position3Target.PosX, position3Target.PosY, position3Target.PosZ);
-                    break;
-                }
         }
 
+        // Создаём трансформ с мировыми координатами
+        positionUnit.Transform = new Transform(null, null, caster.Transform.WorldId, caster.Transform.ZoneId, 0, worldPosX, worldPosY, worldPosZ, 0f, 0f, 0f);
         positionUnit.Region = WorldManager.Instance.GetRegion(positionUnit);
+
+        // Для дудадов на кораблях (например, гарпун), Transform.Parent может быть null
+        // но нужно вычислить мировые координаты относительно корабля
+        var casterWorldPos = caster.Transform.World.Position;
+
+        // Если это дудад с локальными координатами (worldPos == localPos), найдем корабль по OwnerId
+        if (caster is DoodadObj.Doodad doodad &&
+            casterWorldPos.X == caster.Transform.Local.Position.X &&
+            casterWorldPos.Y == caster.Transform.Local.Position.Y)
+        {
+            // Гарпун на корабле - попробуем найти корабль через владельца
+            var shipParent = WorldManager.Instance.GetUnit(doodad.OwnerObjId);
+            if (shipParent != null)
+            {
+                var shipWorldPos = shipParent.Transform.World.Position;
+                casterWorldPos = new Vector3(
+                    shipWorldPos.X + caster.Transform.Local.Position.X,
+                    shipWorldPos.Y + caster.Transform.Local.Position.Y,
+                    shipWorldPos.Z + caster.Transform.Local.Position.Z
+                );
+                Logger.Debug($"SetInitialTarget: garpun on ship, ship={shipParent.Name} shipWorldPos=({shipWorldPos.X:F2}, {shipWorldPos.Y:F2}, {shipWorldPos.Z:F2}), adjusted casterWorldPos=({casterWorldPos.X:F2}, {casterWorldPos.Y:F2}, {casterWorldPos.Z:F2})");
+            }
+        }
+
+        var targetDist = MathUtil.CalculateDistance(casterWorldPos, positionUnit.Transform.World.Position, true);
+        Logger.Debug($"SetInitialTarget result: target=({positionUnit.Transform.World.Position.X:F2}, {positionUnit.Transform.World.Position.Y:F2}, {positionUnit.Transform.World.Position.Z:F2}), distance={targetDist:F2}m");
+        Logger.Debug($"SetInitialTarget caster: worldPos=({casterWorldPos.X:F2}, {casterWorldPos.Y:F2}, {casterWorldPos.Z:F2})");
 
         return positionUnit;
     }
@@ -1652,6 +1698,11 @@ AlwaysHit:
     /// </summary>
     public static SkillResult ValidateRange(Unit unit, BaseUnit target, SkillTemplate template)
     {
+        // Позиционные скиллы используют виртуальный целевой объект с ObjId = uint.MaxValue
+        // Для них проверка дистанции не требуется, так как координаты отправляются клиентом
+        if (target?.ObjId == uint.MaxValue)
+            return SkillResult.Success;
+
         var (minRange, maxRange) = CalculateRange(unit, template);
         // Используем точное значение дистанции без округления вниз для более точной проверки
         // Math.Floor может привести к неправильной проверке (например, 2.5 метра становится 2 метра)
