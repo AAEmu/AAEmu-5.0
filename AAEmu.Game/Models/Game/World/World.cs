@@ -8,6 +8,7 @@ using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.World.Transform;
 using AAEmu.Game.Models.Game.World.Xml;
 using AAEmu.Game.Models.Game.World.Zones;
+using AAEmu.Game.Utils;
 using NLog;
 
 namespace AAEmu.Game.Models.Game.World;
@@ -93,6 +94,51 @@ public class World
 
     #endregion
 
+    #region Static geometry collision
+
+    private readonly ConcurrentDictionary<((int X, int Y, int Z) Start, (int X, int Y, int Z) End, int Tol), (bool Blocked, DateTime Expiry)> _segmentBlockCache = new();
+    private static readonly TimeSpan SegmentBlockCacheTtl = TimeSpan.FromMilliseconds(500);
+
+    private static (int X, int Y, int Z) QuantizeKey(Vector3 v)
+        => ((int)MathF.Round(v.X * 4), (int)MathF.Round(v.Y * 4), (int)MathF.Round(v.Z * 2));
+
+    /// <summary>
+    /// Checks whether a horizontal movement segment is blocked by static world geometry (brush/voxel objects).
+    /// Uses the <see cref="AAEmu.Game.Physics.WorldStaticGeometryIndex"/> in this world's physics manager.
+    /// Results are cached for <see cref="SegmentBlockCacheTtl"/> to avoid redundant raycasts per NPC tick.
+    /// </summary>
+    /// <param name="start">Segment start position in world space.</param>
+    /// <param name="end">Segment end position in world space.</param>
+    /// <param name="verticalTolerance">Height tolerance for wall detection.</param>
+    /// <param name="hitTarget">Always null in this implementation (no Jitter body tracking).</param>
+    /// <returns>True if static geometry blocks the segment.</returns>
+    public bool IsStaticCollisionSegmentBlocked(Vector3 start, Vector3 end, float verticalTolerance, out object hitTarget)
+    {
+        hitTarget = null;
+
+        if (Physics?.StaticGeometryIndex == null)
+            return false;
+
+        var cacheKey = (QuantizeKey(start), QuantizeKey(end), (int)MathF.Round(verticalTolerance * 10));
+        if (_segmentBlockCache.TryGetValue(cacheKey, out var cached))
+        {
+            if (DateTime.UtcNow < cached.Expiry)
+                return cached.Blocked;
+            _segmentBlockCache.TryRemove(cacheKey, out _);
+        }
+
+        if (Physics.StaticGeometryIndex.IsSegmentWallBlocked(start, end, verticalTolerance))
+        {
+            _segmentBlockCache[cacheKey] = (true, DateTime.UtcNow + SegmentBlockCacheTtl);
+            return true;
+        }
+
+        _segmentBlockCache[cacheKey] = (false, DateTime.UtcNow + SegmentBlockCacheTtl);
+        return false;
+    }
+
+    #endregion
+
     #region Water reload stubs
 
     /// <summary>Clears ingested zones and rebuilds them from cells already loaded. Stub until full nikes water pipeline is ported.</summary>
@@ -137,6 +183,8 @@ public class World
     public float GetRawHeightMapHeight(int x, int y)
     {
         // This is the old GetHeight()
+        if (HeightMaps == null)
+            return 0f;
         var sx = x / 2;
         var sy = y / 2;
         return (float)(HeightMaps[sx, sy] / HeightMaxCoefficient);
@@ -174,6 +222,41 @@ public class World
         var height = Blerp(heightTL, heightTR, heightBL, heightBR, offX, offY); // bilinear interpolation
 
         return height;
+    }
+
+    /// <summary>
+    /// Gets height at the given position, consulting the static geometry index first (multi-hit),
+    /// then falling back to the heightmap. Picks the surface closest to <paramref name="referenceZ"/>
+    /// from above to correctly resolve raised indoor floors and cave ceilings.
+    /// </summary>
+    public float GetHeight(float x, float y, float referenceZ)
+    {
+        if (Physics?.StaticGeometryIndex != null)
+        {
+            const float ProbeOffset = 2f;
+            var probeZ = referenceZ + ProbeOffset;
+            var hits = new System.Collections.Generic.List<float>(8);
+            if (Physics.StaticGeometryIndex.TryCollectRaycastDownHits(x, y, probeZ, hits) && hits.Count > 0)
+            {
+                // Pick the hit that is at or below the reference Z and closest to it from above.
+                var best = 0f;
+                var bestDelta = float.PositiveInfinity;
+                foreach (var h in hits)
+                {
+                    if (h <= 0f) continue;
+                    var delta = referenceZ - h;
+                    if (delta >= 0f && delta < bestDelta)
+                    {
+                        best = h;
+                        bestDelta = delta;
+                    }
+                }
+                if (best > 0f)
+                    return best;
+            }
+        }
+
+        return GetHeight(x, y);
     }
 
     /// <summary>

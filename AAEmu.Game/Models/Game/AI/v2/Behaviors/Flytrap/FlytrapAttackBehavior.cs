@@ -140,7 +140,7 @@ public class FlytrapAttackBehavior : BaseCombatBehavior
         var moveDistanceZ = gimmick.Template.Gravity * (delta.Milliseconds / 1000.0f);
         var distanceToTarget = MathUtil.CalculateDistance(gimmickPosition, gimmick.Target, true);
 
-        if (AppConfiguration.Instance.World.GeoDataMode && Ai.Owner.Transform.WorldId > 0)
+        if (CanUseNavigationPathing())
         {
             ProcessGeoDataMovement(target, gimmickPosition, moveDistance, moveDistanceZ, distanceToTarget);
         }
@@ -253,9 +253,6 @@ public class FlytrapAttackBehavior : BaseCombatBehavior
 
     private bool IsValidTarget(Unit target)
     {
-        if (!AppConfiguration.Instance.World.GeoDataMode || Ai.Owner.Transform.WorldId <= 0)
-            return Ai.Owner.UnitIsVisible(target) && !target.IsDead;
-
         return Ai.Owner.UnitIsVisible(target) && !target.IsDead;
     }
 

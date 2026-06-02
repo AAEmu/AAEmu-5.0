@@ -38,6 +38,12 @@ namespace AAEmu.Game.Core.Managers.World
         private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
         public InstanceWorld SimulationWorld { get; set; }
 
+        /// <summary>
+        /// Static spatial index over all brush/voxel geometry loaded from object.dat cells.
+        /// Used for NPC floor-height raycasting and wall-segment collision checks.
+        /// </summary>
+        public WorldStaticGeometryIndex StaticGeometryIndex { get; } = new();
+
         private const float DefaultWaterLevel = 100f;
 
         /// <summary>

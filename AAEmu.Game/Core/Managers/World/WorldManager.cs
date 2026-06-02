@@ -638,34 +638,48 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
     /// <returns>Height value.</returns>
     public float GetHeight(uint zoneId, float x, float y)
     {
-        // try to find Z first in GeoData, and then in HeightMaps, if not found, leave Z as it is
-        var height = 0f;
-        var world = GetWorldByZone(zoneId);
+        return GetHeight(zoneId, x, y, 0f);
+    }
 
+    /// <summary>
+    /// Returns the ground height for given coordinates in the specified zone.
+    /// When <paramref name="referenceZ"/> is non-zero the static geometry index is queried first
+    /// to correctly resolve raised floors / cave interiors (фаза 1 геодаты).
+    /// </summary>
+    public float GetHeight(uint zoneId, float x, float y, float referenceZ)
+    {
+        var world = GetWorldByZone(zoneId);
+        if (world == null)
+            return 0f;
+
+        // Try static geometry index first (respects raised floors, caves).
+        if (world.Physics?.StaticGeometryIndex != null && referenceZ != 0f)
+        {
+            var staticHeight = world.GetHeight(x, y, referenceZ);
+            if (staticHeight > 0f)
+                return staticHeight;
+        }
+
+        // Legacy AiGeoDataManager path.
         if (AppConfiguration.Instance.World.GeoDataMode && world.Id > 0)
         {
             var position = new WorldSpawnPosition { WorldId = 0, ZoneId = zoneId, X = x, Y = y, Z = 0, Yaw = 0, Pitch = 0, Roll = 0 };
-            height = AiGeoDataManager.Instance.GetHeight(zoneId, position);
+            var height = AiGeoDataManager.Instance.GetHeight(zoneId, position);
+            if (height != 0f)
+                return height;
         }
 
-        // check, as there is no geodata for main_world yet
-        if (height == 0)
+        if (!AppConfiguration.Instance.HeightMapsEnable)
+            return 0f;
+
+        try
         {
-            if (AppConfiguration.Instance.HeightMapsEnable)
-            {
-                try
-                {
-                    //var world = GetWorldByZone(zoneId);
-                    height = world?.GetHeight(x, y) ?? 0f;
-                }
-                catch
-                {
-                    height = 0f;
-                }
-            }
+            return world.GetHeight(x, y);
         }
-
-        return height;
+        catch
+        {
+            return 0f;
+        }
     }
 
     /// <summary>
@@ -675,35 +689,39 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
     /// <returns>Height at target world transform, or transform.World.Position.Z if no heightmap could be found</returns>
     public float GetHeight(Transform transform)
     {
-        // try to find Z first in GeoData, and then in HeightMaps, if not found, leave Z as it is
-        var height = 0f;
+        var world = GetWorld(transform.WorldId);
+        if (world == null)
+            return transform.World.Position.Z;
+
+        var pos = transform.World.Position;
+
+        // Static geometry index path (respects raised floors / caves).
+        if (world.Physics?.StaticGeometryIndex != null)
+        {
+            var staticHeight = world.GetHeight(pos.X, pos.Y, pos.Z);
+            if (staticHeight > 0f)
+                return staticHeight;
+        }
+
+        // Legacy AiGeoDataManager path.
         if (AppConfiguration.Instance.World.GeoDataMode && transform.WorldId > 0)
         {
-            height = AiGeoDataManager.Instance.GetHeight(transform.ZoneId, transform.World.Position);
+            var height = AiGeoDataManager.Instance.GetHeight(transform.ZoneId, pos);
+            if (height != 0f)
+                return height;
         }
 
-        // check, as there is no geodata for main_world yet
-        if (height == 0)
+        if (!AppConfiguration.Instance.HeightMapsEnable)
+            return pos.Z;
+
+        try
         {
-            if (AppConfiguration.Instance.HeightMapsEnable)
-            {
-                try
-                {
-                    var world = GetWorld(transform.WorldId);
-                    height = world?.GetHeight(transform.World.Position.X, transform.World.Position.Y) ?? transform.World.Position.Z;
-                }
-                catch
-                {
-                    height = transform.World.Position.Z;
-                }
-            }
-            else
-            {
-                height = transform.World.Position.Z;
-            }
+            return world.GetHeight(pos.X, pos.Y);
         }
-
-        return height;
+        catch
+        {
+            return pos.Z;
+        }
     }
 
     private static GameObject GetRootObj(GameObject obj)

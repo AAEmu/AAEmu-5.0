@@ -8,6 +8,7 @@ using NLog;
 
 using AAEmu.Commons.Exceptions;
 using AAEmu.Game.IO;
+using AAEmu.Game.Models.CryEngine.Entities;
 using AAEmu.Game.Models.CryEngine.Readers;
 using AAEmu.Game.Models.Game.World;
 
@@ -259,4 +260,16 @@ public class BaseBaiLoader(WorldTemplate parentWorldTemplate)
         return nearestNode;
     }
     */
+
+    /// <summary>
+    /// Returns nearby obstacle descriptors from vertsmission data.
+    /// NOTE: VertexMissionReader is not yet ported — always returns empty list.
+    /// Stub added to allow NpcPathfindingImproved.cs to compile.
+    /// </summary>
+    public List<ObstacleDataDescriptor> GetNearbyObstacleDescriptors(
+        Vector3 pos, float searchRadius, float maxHeightOffset = 8f, int maxResults = 64)
+    {
+        // VertexMissionReader is not ported yet — return empty list.
+        return [];
+    }
 }

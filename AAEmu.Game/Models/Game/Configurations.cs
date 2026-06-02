@@ -69,9 +69,10 @@ public class WorldConfig
     /// </summary>
     public bool GodMode { get; set; }
     /// <summary>
-    /// Enables the loading of NavMesh data for dungeons
+    /// Legacy BAI/nav toggle. Height resolution now comes from terrain + static client geometry.
+    /// Left enabled by default so legacy nav/ship-barrier consumers keep working.
     /// </summary>
-    public bool GeoDataMode { get; set; }
+    public bool GeoDataMode { get; set; } = true;
     /// <summary>
     /// Enables save_geodata mode
     /// </summary>

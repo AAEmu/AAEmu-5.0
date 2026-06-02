@@ -7,7 +7,11 @@ using System.Numerics;
 
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers.World;
+using AAEmu.Game.Models.CryEngine.Loaders;
+using AAEmu.Game.Models.CryEngine.Mission;
+using AAEmu.Game.Models.CryEngine.Readers;
 using AAEmu.Game.Models.Game.AI.AStar;
+using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Models.Game.World.Transform;
 using AAEmu.Game.Utils.DB;
 
@@ -603,6 +607,343 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
             _aiNavigationModifier[(byte)world.Id] = aiNavigationModifier;
             _aiPath[(byte)world.Id] = aiPath;
         }
+    }
+
+    #endregion
+
+    #region Static Collision Segment Check
+
+    /// <summary>
+    /// Hybrid blocker: checks if a segment between two world positions is blocked by either
+    /// a forbidden area or by runtime static world geometry (walls, buildings, caves).
+    /// Mirrors source AiGeoDataManager.IsSegmentBlocked adapted for Singleton architecture.
+    /// </summary>
+    public bool IsSegmentBlocked(Vector3 start, Vector3 end, float extraRadius = 0f)
+    {
+        // Check static geometry via WorldManager — find a world that has collision loaded
+        var worlds = WorldManager.Instance.GetWorlds();
+        foreach (var world in worlds)
+        {
+            if (world?.Physics?.StaticGeometryIndex == null)
+                continue;
+
+            if (world.Physics.StaticGeometryIndex.GetEntryCountAt(start.X, start.Y) <= 0 &&
+                world.Physics.StaticGeometryIndex.GetEntryCountAt(end.X, end.Y) <= 0)
+                continue;
+
+            if (world.IsStaticCollisionSegmentBlocked(start, end, 8f + extraRadius, out _))
+                return true;
+
+            break;
+        }
+
+        return false;
+    }
+
+    #endregion
+
+    #region Forbidden Area and Path Reduction
+
+    /// <summary>
+    /// Checks if a point is inside any forbidden zone polygon.
+    /// Adapted for Singleton architecture: looks up BAI data from WorldManager.
+    /// </summary>
+    public bool CheckImpossibleWalk(Vector3 point)
+    {
+        return CheckImpossibleWalk(point, null, out _);
+    }
+
+    /// <summary>
+    /// Checks if a point is inside a forbidden zone area, with an optional narrow override for
+    /// raised indoor floors where 2D forbidden polygons overlap several vertical layers.
+    /// </summary>
+    public bool CheckImpossibleWalk(Vector3 point, float? raisedLayerAnchorHeight, out bool allowedByRaisedIndoorLayer)
+    {
+        allowedByRaisedIndoorLayer = false;
+
+        var bai = GetBaiByPos(point);
+        if (bai == null)
+            return false;
+
+        foreach (var areaMission in bai.AreasMissionReaders)
+        {
+            foreach (var shape in EnumerateForbiddenShapesFromReader(areaMission))
+            {
+                if (!IsInPolygon(point, shape.Points))
+                    continue;
+
+                if (raisedLayerAnchorHeight.HasValue)
+                {
+                    // Allow raised indoor points that are on a distinct elevated floor layer.
+                    allowedByRaisedIndoorLayer = true;
+                    break;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a line passes through any forbidden area shape near the start position.
+    /// </summary>
+    public bool LinePassesThroughForbiddenArea(
+        Vector3 startNode,
+        Vector3 endNode,
+        List<string> ignoredShapeNames,
+        bool ignoreCorners,
+        out AAEmu.Game.Models.CryEngine.Mission.AiShape intersectionShape,
+        out Vector3 intersectionPoint,
+        out int intersectionLinePointStartIndex,
+        float maxHeightOffset = 8f)
+    {
+        intersectionPoint = Vector3.Zero;
+        intersectionLinePointStartIndex = -1;
+        intersectionShape = null;
+        var intersectionPointDistanceSq = float.PositiveInfinity;
+
+        var bai = GetBaiByPos(startNode);
+        if (bai == null)
+            return false;
+
+        foreach (var areaMission in bai.AreasMissionReaders)
+        {
+            foreach (var aiShape in EnumerateForbiddenShapesFromReader(areaMission))
+            {
+                if (ignoredShapeNames != null && ignoredShapeNames.Contains(aiShape.Name))
+                    continue;
+                if (!aiShape.BBoxIntersectsSegment2D(startNode, endNode))
+                    continue;
+
+                if (!LinePassesThroughAiShape(startNode, endNode, aiShape, true, maxHeightOffset, ignoreCorners, out var hitTest, out var hitIndex))
+                    continue;
+
+                var hitDistanceSq = Vector3.DistanceSquared(startNode, hitTest);
+                if (intersectionLinePointStartIndex < 0 || hitDistanceSq < intersectionPointDistanceSq)
+                {
+                    intersectionShape = aiShape;
+                    intersectionPoint = hitTest;
+                    intersectionLinePointStartIndex = hitIndex;
+                    intersectionPointDistanceSq = hitDistanceSq;
+                }
+            }
+        }
+
+        return intersectionLinePointStartIndex >= 0;
+    }
+
+    /// <summary>
+    /// Finds a detour waypoint around a forbidden area obstacle.
+    /// </summary>
+    public bool TryFindLocalDetourWaypoint(
+        Vector3 start,
+        Vector3 goal,
+        Vector3 obstaclePoint,
+        AAEmu.Game.Models.CryEngine.Mission.AiShape obstacleShape,
+        out Vector3 detourWaypoint,
+        float maxDetourDistance = 20f)
+    {
+        detourWaypoint = Vector3.Zero;
+
+        if (obstacleShape?.Points == null || obstacleShape.Points.Count < 3)
+            return false;
+
+        var obstacleCenter = new Vector3(
+            (obstacleShape.Points[0].X + obstacleShape.Points[1].X + obstacleShape.Points[2].X) / 3,
+            (obstacleShape.Points[0].Y + obstacleShape.Points[1].Y + obstacleShape.Points[2].Y) / 3,
+            (obstacleShape.Points[0].Z + obstacleShape.Points[1].Z + obstacleShape.Points[2].Z) / 3);
+
+        var directionFromObstacle = Vector3.Subtract(obstaclePoint, obstacleCenter);
+        directionFromObstacle.Z = 0;
+
+        if (directionFromObstacle.Length() < 0.1f)
+            directionFromObstacle = new Vector3(1, 0, 0);
+
+        directionFromObstacle = Vector3.Normalize(directionFromObstacle);
+
+        var perpendicularRight = new Vector3(-directionFromObstacle.Y, directionFromObstacle.X, 0);
+        var perpendicularLeft = new Vector3(directionFromObstacle.Y, -directionFromObstacle.X, 0);
+        var detourDistances = new[] { 3f, 6f, 10f, 15f };
+
+        foreach (var dist in detourDistances)
+        {
+            if (dist > maxDetourDistance)
+                break;
+
+            var rightWaypoint = obstaclePoint + perpendicularRight * dist;
+            rightWaypoint.Z = obstaclePoint.Z;
+            if (!CheckImpossibleWalk(rightWaypoint) &&
+                !IsSegmentBlocked(start, rightWaypoint) &&
+                !IsSegmentBlocked(rightWaypoint, goal))
+            {
+                detourWaypoint = rightWaypoint;
+                return true;
+            }
+
+            var leftWaypoint = obstaclePoint + perpendicularLeft * dist;
+            leftWaypoint.Z = obstaclePoint.Z;
+            if (!CheckImpossibleWalk(leftWaypoint) &&
+                !IsSegmentBlocked(start, leftWaypoint) &&
+                !IsSegmentBlocked(leftWaypoint, goal))
+            {
+                detourWaypoint = leftWaypoint;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Reduces a path by skipping intermediate nodes when direct line-of-sight is clear.
+    /// </summary>
+    public Queue<Vector3> ReducePath(List<Vector3> foundPath, int maxNodeSkipCount)
+    {
+        var res = new Queue<Vector3>();
+        for (var startNodeIndex = 0; startNodeIndex < foundPath.Count; startNodeIndex++)
+        {
+            var startNode = foundPath[startNodeIndex];
+            res.Enqueue(startNode);
+
+            for (var endNodeIndex = startNodeIndex + maxNodeSkipCount; endNodeIndex > startNodeIndex; endNodeIndex--)
+            {
+                if (endNodeIndex >= foundPath.Count)
+                    continue;
+                var endNode = foundPath[endNodeIndex];
+                if (!IsSegmentBlocked(startNode, endNode))
+                {
+                    res.Enqueue(endNode);
+                    startNodeIndex = endNodeIndex;
+                    break;
+                }
+            }
+        }
+        return res;
+    }
+
+    // ---- Private helpers for ForbiddenArea methods ----
+
+    private static Models.CryEngine.Loaders.BaseBaiLoader GetBaiByPos(Vector3 pos)
+    {
+        var worlds = WorldManager.Instance.GetWorlds();
+        foreach (var world in worlds)
+        {
+            var bai = world?.Template?.GetBaiByPos(pos);
+            if (bai != null)
+                return bai;
+        }
+        return null;
+    }
+
+    private static IEnumerable<AAEmu.Game.Models.CryEngine.Mission.AiShape> EnumerateForbiddenShapesFromReader(
+        AAEmu.Game.Models.CryEngine.Readers.AreasMissionReader areaMission)
+    {
+        if (areaMission == null)
+            yield break;
+
+        foreach (var shape in areaMission.ForbiddenAreasList)
+            yield return shape;
+
+        foreach (var shape in areaMission.ForbiddenBoundariesList)
+            yield return shape;
+
+        foreach (var shape in areaMission.DesignerForbiddenAreasList)
+            yield return shape;
+    }
+
+    private static bool IsInPolygon(Vector3 point, List<Vector3> polygon)
+    {
+        if (polygon == null || polygon.Count < 3)
+            return false;
+        var result = false;
+        var a = polygon[^1];
+        foreach (var b in polygon)
+        {
+            if (b.X.Equals(point.X) && b.Y.Equals(point.Y))
+                return true;
+
+            if (b.Y.Equals(a.Y) && point.Y.Equals(a.Y))
+            {
+                if (a.X <= point.X && point.X <= b.X) return true;
+                if (b.X <= point.X && point.X <= a.X) return true;
+            }
+
+            if ((b.Y < point.Y && a.Y >= point.Y) || (a.Y < point.Y && b.Y >= point.Y))
+            {
+                if (b.X + (point.Y - b.Y) / (a.Y - b.Y) * (a.X - b.X) <= point.X)
+                    result = !result;
+            }
+            a = b;
+        }
+        return result;
+    }
+
+    private static bool LinePassesThroughAiShape(
+        Vector3 startPos,
+        Vector3 endPos,
+        AAEmu.Game.Models.CryEngine.Mission.AiShape shape,
+        bool closedLoop,
+        float maxHeightOffset,
+        bool ignoreCorners,
+        out Vector3 intersectionPoint,
+        out int intersectionPointStartIndex)
+    {
+        intersectionPoint = Vector3.Zero;
+        intersectionPointStartIndex = -1;
+        var maxIndexToStart = shape.Points.Count + (closedLoop ? 0 : -1);
+        const float CornerEpsSq = 0.0001f;
+
+        for (var index = 0; index < maxIndexToStart; index++)
+        {
+            var lineStart = shape.Points[index];
+            var lineEnd = index < maxIndexToStart - 1 ? shape.Points[index + 1] : shape.Points[0];
+            if (ignoreCorners && (
+                    Vector3.DistanceSquared(startPos, lineStart) <= CornerEpsSq ||
+                    Vector3.DistanceSquared(startPos, lineEnd) <= CornerEpsSq ||
+                    Vector3.DistanceSquared(endPos, lineStart) <= CornerEpsSq ||
+                    Vector3.DistanceSquared(endPos, lineEnd) <= CornerEpsSq))
+                continue;
+
+            var iPoint = FindLineIntersection(startPos, endPos, lineStart, lineEnd);
+            if (iPoint == Vector3.Zero)
+                continue;
+
+            if (maxHeightOffset == 0f ||
+                MathF.Abs(iPoint.Z - startPos.Z) <= maxHeightOffset ||
+                MathF.Abs(iPoint.Z - endPos.Z) <= maxHeightOffset)
+            {
+                var newDistSq = Vector3.DistanceSquared(startPos, iPoint);
+                if (intersectionPointStartIndex < 0 ||
+                    newDistSq < Vector3.DistanceSquared(startPos, intersectionPoint))
+                {
+                    intersectionPoint = iPoint;
+                    intersectionPointStartIndex = index;
+                }
+            }
+        }
+
+        return intersectionPointStartIndex >= 0;
+    }
+
+    private static Vector3 FindLineIntersection(Vector3 lineAStart, Vector3 lineAEnd, Vector3 lineBStart, Vector3 lineBEnd)
+    {
+        // 2D intersection (XY plane), Z from lineA.
+        var d1 = lineAEnd - lineAStart;
+        var d2 = lineBEnd - lineBStart;
+        var cross = d1.X * d2.Y - d1.Y * d2.X;
+        if (MathF.Abs(cross) < 1e-6f)
+            return Vector3.Zero; // parallel
+
+        var diff = lineBStart - lineAStart;
+        var t = (diff.X * d2.Y - diff.Y * d2.X) / cross;
+        var u = (diff.X * d1.Y - diff.Y * d1.X) / cross;
+
+        if (t < 0f || t > 1f || u < 0f || u > 1f)
+            return Vector3.Zero; // outside segment bounds
+
+        return lineAStart + d1 * t;
     }
 
     #endregion

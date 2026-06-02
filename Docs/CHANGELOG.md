@@ -1,5 +1,54 @@
 # CHANGELOG - AAEmu 5.0.7.0 Private Server
 
+## [5.0.7.0 private] - 03.06.2026
+
+### Features / Новые функции
+
+**feat(geodata): добавить статическую клиентскую геодату (фазы 1–11)**
+
+#### Что реализовано
+
+**Ядро: `WorldStaticGeometryIndex` + `StaticGeoDataService`** (`AAEmu.Game/Physics/WorldStaticGeometryIndex.cs`)
+- Пространственный индекс по сетке ячеек (64×64 у.е.) для brush/voxel объектов клиентского мира
+- `TryRaycastDown` / `TryCollectRaycastDownHits` — вертикальный raycast вниз, возвращает все попадания (multi-hit для стопок геометрии)
+- `IsSegmentWallBlocked` — проверка горизонтального сегмента на пересечение со статическими стенами
+- `StaticGeoDataService.TryResolveDistinctLayerHeight` — определение высоты обособленного слоя (пол помещения, пещера, возвышенность)
+
+**Интеграция в мир** (`World.cs`, `WorldCell.cs`, `PhysicsManager.cs`)
+- `World.Physics.StaticGeometryIndex` — индекс регистрируется в `PhysicsManager`, ячейки заполняются при загрузке
+- `World.IsStaticCollisionSegmentBlocked(start, end, tolerance)` — проверка движения NPC с кешированием результатов (500 мс TTL)
+- `World.GetHeight(x, y, referenceZ)` — перегрузка для высоты, консультирующая статическую геометрию (multi-hit) перед возвратом к heightmap
+- `WorldManager.GetHeight(zoneId, x, y, referenceZ)` — передаёт `referenceZ` в новый `World.GetHeight`
+
+**AI: убраны runtime-guards** (`BaseCombatBehavior.cs`, `FlytrapAttackBehavior.cs`)
+- Убраны проверки `AppConfiguration.Instance.World.GeoDataMode` из боевого AI (геодата всегда доступна)
+- Добавлено статическое определение маршрута: `IsStaticCollisionSegmentBlocked` используется перед Navmesh
+
+**AI: hybrid path / навмеш** (`PathNode.cs`, `AiGeodataManager.cs`)
+- `AiGeodataManager.IsSegmentBlocked(start, end)` — проверяет сегмент через все активные миры
+- `PathNode`: hybrid runtime validation — фильтрация линков через статическую геометрию
+
+**NPC высота** (`NpcHeightResolver.cs`, `NpcHeightState.cs`, `NpcSpawnHeightOverrides.cs`, `NpcWaterSurfaceOverrides.cs`, `NpcPathfindingImproved.cs`, `NpcDoodadObstacleClassifier.cs`)
+- `NpcHeightAnchorKind` — enum типа anchor (Terrain, InteriorFloor, WaterSurface, WaterColumn, Air, Spawner, Unknown)
+- `NpcHeightState` — отслеживание текущего anchor'а NPC, LockLayer для пещер/зданий
+- `NpcHeightResolver` — определение высоты NPC с учётом слоёв геометрии
+- `NpcSpawnHeightOverrides` — разрешение высоты спавна с приоритетом IntegriorFloor
+- `NpcPathfindingImproved` — улучшенный pathfinding: terrain wall detours (фаза 5), shared world mesh fallback (фаза 11)
+
+**Конфигурация** (`Configurations.cs`)
+- `GeoDataMode = true` по умолчанию; обновлён комментарий: legacy BAI/nav toggle
+
+#### Что не портировалось (отсутствует контекст в цели)
+- `AIUtils.TryFindIndoorRoamingPosition` (фаза 10) — метод отсутствует в упрощённой версии цели
+- `Npc.FindPath2` / `TryGetFindPath2BlockingInfo` (фазы 6–7) — методы отсутствуют в цели
+- `NpcSpawnerNpc` height resolution block (фаза 2) — не реализована в целевом SpawnNpc
+
+Files changed: `WorldStaticGeometryIndex.cs` (new), `World.cs`, `WorldCell.cs`, `PhysicsManager.cs`, `AiGeodataManager.cs`, `BaseCombatBehavior.cs`, `FlytrapAttackBehavior.cs`, `PathNode.cs`, `Configurations.cs`, `WorldManager.cs`, `NpcHeightResolver.cs` (new), `NpcHeightState.cs` (new), `NpcSpawnHeightOverrides.cs` (new), `NpcWaterSurfaceOverrides.cs` (new), `NpcPathfindingImproved.cs` (new), `NpcDoodadObstacleClassifier.cs` (new), `BaseBaiLoader.cs`, `AiShape.cs`, `AppConfiguration.NpcPathfinding.cs` (new), `NpcAi.cs`
+
+Tests added: `WorldInstanceStaticGeometrySegmentTests.cs`, `WorldGetHeightStaticGeoTests.cs`, `StaticGeoDataServiceTests.cs`, `AiGeodataManagerTests.cs`, `PathNodeTests.cs`, `AIUtilsTests.cs`, `BaseCombatBehaviorTests.cs`, `NpcPathfindingImprovedTests.cs`
+
+---
+
 ## [5.0.7.0 private] - 02.06.2026
 
 ### Bug Fixes / Исправления

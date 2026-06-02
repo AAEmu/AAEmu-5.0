@@ -172,13 +172,6 @@ public class PathNode
 
         foreach (var point in neighbourPoints)
         {
-            // Checking that the point falls within the forbidden area where it is not allowed to walk.
-            if (AiGeoDataManager.Instance.CheckImpossibleWalk(zoneKey, point.Position))
-            {
-                //ViewPoint(point.Position, 858u); // let's show the point for debugging purposes
-                //continue;
-            }
-
             // Fill in the data for the waypoint.
             var neighbourNode = new PathNode();
             neighbourNode.Current = point.EndPoint;
@@ -186,6 +179,16 @@ public class PathNode
             neighbourNode.CameFrom = pathNode;
             neighbourNode.PathLengthFromStart = GetDistanceFromStart(point.Position);
             neighbourNode.HeuristicEstimatePathLength = GetHeuristicPathLength(point.Position);
+
+            // Hybrid runtime validation: navmesh links must also respect forbidden areas and
+            // static-only blockers that are not represented in the navigation database.
+            if (AiGeoDataManager.Instance.CheckImpossibleWalk(zoneKey, neighbourNode.Position) ||
+                AiGeoDataManager.Instance.IsSegmentBlocked(
+                    new System.Numerics.Vector3(pathNode.Position.X, pathNode.Position.Y, pathNode.Position.Z),
+                    new System.Numerics.Vector3(neighbourNode.Position.X, neighbourNode.Position.Y, neighbourNode.Position.Z)))
+            {
+                continue;
+            }
 
             result.Add(neighbourNode);
             //ViewPoint(point.Position, 681u); // let's show the point for debugging purposes

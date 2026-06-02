@@ -32,6 +32,22 @@ public abstract class BaseCombatBehavior : Behavior
     private const float DefaultMeleeAttackRangeAdjustment = 1f;
     private const float DefaultFlyingHeightAdjustment = 15f;
 
+    /// <summary>
+    /// Returns true when this NPC's world has geodata available for navigation pathing.
+    /// Replaces the old AppConfiguration.Instance.World.GeoDataMode check, which was a global flag
+    /// that did not account for worlds where geodata is simply not loaded yet.
+    /// </summary>
+    protected bool CanUseNavigationPathing()
+    {
+        if (Ai?.Owner == null)
+            return false;
+
+        if (Ai.Owner.Transform.WorldId <= 0)
+            return false;
+
+        return Ai.Owner.ParentWorld?.Template?.GeoData != null;
+    }
+
     // Internal state
     internal bool _strafeDuringDelay;
     internal DateTime _combatStartTime;
@@ -129,7 +145,7 @@ public abstract class BaseCombatBehavior : Behavior
 
     private void HandleMovement(Vector3 currentPosition, Vector3 targetPosition, float speed, byte moveFlags, float range, float distanceToTarget)
     {
-        if (AppConfiguration.Instance.World.GeoDataMode && Ai.Owner.Transform.WorldId > 0)
+        if (CanUseNavigationPathing())
         {
             HandleGeoDataMovement(currentPosition, targetPosition, speed, moveFlags, range, distanceToTarget);
         }
@@ -317,7 +333,7 @@ public abstract class BaseCombatBehavior : Behavior
         if (!Ai.Owner.UnitIsVisible(target) || target.Hp <= 0)
             return false;
 
-        if (AppConfiguration.Instance.World.GeoDataMode && Ai.Owner.Transform.WorldId > 0)
+        if (CanUseNavigationPathing())
             return true;
 
         return WorldManager.Instance.GetUnit(target.ObjId) != null;
@@ -327,7 +343,7 @@ public abstract class BaseCombatBehavior : Behavior
     {
         if (Ai.Owner.CurrentAggroTarget != target && !Ai.AlreadyTargeted)
         {
-            if (AppConfiguration.Instance.World.GeoDataMode && Ai.Owner.Transform.WorldId > 0)
+            if (CanUseNavigationPathing())
             {
                 Ai.Owner.FindPath(target);
             }

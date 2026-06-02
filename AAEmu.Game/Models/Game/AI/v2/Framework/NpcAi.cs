@@ -45,6 +45,7 @@ namespace AAEmu.Game.Models.Game.AI.v2.Framework
         public Vector3 IdlePosition { get; set; }
         public Vector3 HomePosition { get; set; }
         public AiParams Param { get; set; }
+        public NpcHeightState HeightState { get; } = new();
         public PathNode PathNode { get; set; }
 
         #region AI Commands Management

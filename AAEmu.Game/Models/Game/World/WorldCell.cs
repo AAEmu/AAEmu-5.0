@@ -10,6 +10,7 @@ using AAEmu.Game.Models;
 using AAEmu.Game.Models.ClientData;
 using AAEmu.Game.Models.CryEngine.Loaders;
 using AAEmu.Game.Models.CryEngine.Objects;
+using AAEmu.Game.Physics;
 
 using Jitter2.LinearMath;
 
@@ -215,6 +216,13 @@ public class WorldCell
                 if (objects.AssetPathsList.Count > 0 || objects.PrefabsList.Count > 0)
                     Logger.Error($"Error loading objects from {objectDatFile}, only {objects.AssetPathsList.Count} assets and {objects.PrefabsList.Count} prefabs read");
             }
+
+            // Register brush and voxel objects into the static geometry index of each world instance
+            // that uses this template. This enables floor-height raycasting and wall-segment checks for NPCs.
+            if (LoadedObjectDat != null && LoadedObjectDat.PrefabsList.Count > 0)
+            {
+                IngestObjectDatIntoStaticGeometryIndex(LoadedObjectDat);
+            }
         }
 
         #region update_physics_hmap
@@ -260,4 +268,45 @@ public class WorldCell
     }
 
     public Vector3 GetCellWorldOffset() => CellOffset;
+
+    /// <summary>
+    /// Iterates the PrefabsList of the given ObjectsFile and registers all brush and voxel objects
+    /// into the <see cref="WorldStaticGeometryIndex"/> of every loaded world that uses this template.
+    /// Called once after object.dat is successfully parsed for this cell.
+    /// </summary>
+    private void IngestObjectDatIntoStaticGeometryIndex(ObjectsFile objectsFile)
+    {
+        try
+        {
+            var worlds = WorldManager.Instance.GetWorlds();
+            if (worlds == null || worlds.Length == 0)
+                return;
+
+            foreach (var world in worlds)
+            {
+                if (world?.Physics?.StaticGeometryIndex == null)
+                    continue;
+                if (world.Template?.Id != Template.Id)
+                    continue;
+
+                var index = world.Physics.StaticGeometryIndex;
+                foreach (var prefab in objectsFile.PrefabsList)
+                {
+                    switch (prefab)
+                    {
+                        case ObjectDataType1Brush brush:
+                            index.AddBrush(this, brush);
+                            break;
+                        case ObjectDataType6Voxel voxel:
+                            index.AddVoxel(this, voxel);
+                            break;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, $"WorldCell {CellX},{CellY}: Failed to ingest object.dat into StaticGeometryIndex");
+        }
+    }
 }
