@@ -4,6 +4,15 @@
 
 ### Bug Fixes / Исправления
 
+**fix(appellation): передавать buffId звания в пакет SCAppellationChanged** *(by BwonSamdi)*
+
+- `SCAppellationChangedPacket` дополнен полем `buffId` — клиент ожидает его при смене звания
+- В `CharacterAppellations.Change()` перед широковещательной рассылкой читается `BuffId` из шаблона активного звания и передаётся в пакет
+
+Files changed: `AAEmu.Game/Core/Packets/G2C/SCAppellationChangedPacket.cs`, `AAEmu.Game/Models/Game/Char/CharacterAppellations.cs`
+
+---
+
 **fix(physics): исправить погружение и выныривание кораблей при призыве**
 
 На русском:

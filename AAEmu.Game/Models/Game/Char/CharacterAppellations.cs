@@ -73,7 +73,8 @@ public class CharacterAppellations
                 Logger.Warn("Id {0} doesn't exist, owner {1}", id, Owner.Id);
             }
         }
-        Owner.BroadcastPacket(new SCAppellationChangedPacket(Owner.ObjId, ActiveAppellation), true);
+        var buffId = CharacterManager.Instance.GetAppellationsTemplate(ActiveAppellation)?.BuffId ?? 0;
+        Owner.BroadcastPacket(new SCAppellationChangedPacket(Owner.ObjId, ActiveAppellation, buffId), true);
     }
 
     public void Send()
