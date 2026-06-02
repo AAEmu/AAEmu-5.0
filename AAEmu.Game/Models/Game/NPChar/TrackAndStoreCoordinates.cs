@@ -59,8 +59,8 @@ public partial class Npc
             return finalHeight;
         }
 
-        // 4. Получение высоты местности
-        var worldHeight = WorldManager.Instance.GetHeight(zoneId, x, y);
+        // 4. Получение высоты местности (передаём z для корректного резолва raised floors через static geo)
+        var worldHeight = WorldManager.Instance.GetHeight(zoneId, x, y, z);
         if (worldHeight != 0/* && Math.Abs(worldHeight - Spawner.Position.Z) <= 0.1f*/)
         {
             finalHeight = worldHeight;
