@@ -5,6 +5,7 @@ using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.AI.Utils;
 using AAEmu.Game.Models.Game.Models;
+using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Units.Movements;
 using AAEmu.Game.Utils;
 
@@ -141,15 +142,35 @@ public class RoamingBehavior : BaseCombatBehavior
         var moveFlags = Ai.GetRealMovementFlags(moveSpeed);
         moveSpeed *= delta.Milliseconds / 1000.0;
 
-        // Move towards target position
-        Ai.Owner.MoveTowards(_targetRoamPosition, (float)moveSpeed, moveFlags);
+        // Use the improved MoveTowards (NpcPathfindingImproved) which applies
+        // NpcHeightResolver and the MaxVerticalStepDelta guard, preventing NPCs
+        // from falling through raised floors when roaming.
+        var moveResult = Ai.Owner.MoveTowards(_targetRoamPosition, (float)moveSpeed, moveFlags, 1f);
+        switch (moveResult)
+        {
+            case MoveResult.ReachedDestination:
+                CompleteRoaming();
+                return;
+            case MoveResult.Stuck:
+            case MoveResult.CannotMove:
+                CancelRoamingAttempt();
+                return;
+        }
 
-        // Check if we reached the target
+        // Check if we reached the target by distance
         var distanceToTarget = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, _targetRoamPosition);
         if (distanceToTarget < MinimumRoamingDistance)
         {
             CompleteRoaming();
         }
+    }
+
+    private void CancelRoamingAttempt()
+    {
+        _targetRoamPosition = Vector3.Zero;
+        _nextRoamingTime = DateTime.UtcNow.AddSeconds(Rand.Next(MinRoamingDelay, MaxRoamingDelay));
+        if (_isMoving)
+            Ai.Owner.StopMovement();
     }
 
     private void CompleteRoaming()

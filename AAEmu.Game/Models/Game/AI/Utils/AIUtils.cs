@@ -28,6 +28,11 @@ public static class AIUtils
         if (ai?.Owner == null || ai.IdlePosition == default)
             return Vector3.Zero;
 
+        var owner = ai.Owner;
+        var world = owner.ParentWorld;
+        if (world != null)
+            NpcHeightResolver.EnsureAnchorInitialized(owner, world);
+
         var randomOffset = new Vector2(
             (Rand.NextSingle() - 0.5f) * DefaultMaxRoamingDistance * 2,
             (Rand.NextSingle() - 0.5f) * DefaultMaxRoamingDistance * 2);
