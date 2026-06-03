@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using AAEmu.Commons.Utils;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Game.Core.Managers.UnitManagers;
@@ -28,7 +25,7 @@ public class NameManager : Singleton<NameManager>
 
     public uint GetCharacterId(string characterName)
     {
-        var res = (from x in _characterNames where (x.Value.ToLower() == characterName.ToLower()) select x.Key).FirstOrDefault(0u);
+        var res = Enumerable.FirstOrDefault((from x in _characterNames where (x.Value.ToLower() == characterName.ToLower()) select x.Key), 0u);
         return res;
     }
 

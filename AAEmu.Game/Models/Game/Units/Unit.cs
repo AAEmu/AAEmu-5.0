@@ -32,6 +32,7 @@ using AAEmu.Game.Models.Game.World.Transform;
 using AAEmu.Game.Models.Json;
 using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Models.Tasks;
+using Task = AAEmu.Game.Models.Tasks.Task;
 using AAEmu.Game.Models.Tasks.Skills;
 using AAEmu.Game.Utils;
 

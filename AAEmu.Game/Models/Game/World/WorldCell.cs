@@ -295,7 +295,10 @@ public class WorldCell
                     switch (prefab)
                     {
                         case ObjectDataType1Brush brush:
-                            index.AddBrush(this, brush);
+                            var modelPath = brush.PathId >= 0 && brush.PathId < objectsFile.AssetPathsList.Count
+                                ? objectsFile.AssetPathsList[brush.PathId]?.Name ?? string.Empty
+                                : string.Empty;
+                            index.AddBrush(this, brush, modelPath, string.Empty);
                             break;
                         case ObjectDataType6Voxel voxel:
                             index.AddVoxel(this, voxel);

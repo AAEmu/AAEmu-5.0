@@ -13,6 +13,7 @@ using AAEmu.Game.Models.Game.Items.Containers;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Units.Static;
 using AAEmu.Game.Models.Tasks;
+using Task = AAEmu.Game.Models.Tasks.Task;
 using AAEmu.Game.Models.Tasks.Mate;
 
 namespace AAEmu.Game.Models.Game.Units;

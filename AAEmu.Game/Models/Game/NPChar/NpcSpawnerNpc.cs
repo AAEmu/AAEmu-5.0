@@ -89,6 +89,17 @@ public class NpcSpawnerNpc : Spawner<Npc>
         npc.Transform.InstanceId = npc.Transform.WorldId;
         npc.InstanceId = npc.Transform.WorldId;
 
+        // Resolve spawn height and initialize HeightState anchor BEFORE setting HomePosition/IdlePosition.
+        // Without this, the anchor defaults to Terrain and elevated-floor NPCs fall through raised geometry.
+        var spawnWorld = WorldManager.Instance.GetWorld(npc.Transform.WorldId);
+        if (spawnWorld != null && npc.Ai != null)
+        {
+            var spawnPos = npc.Transform.World.Position;
+            var resolution = NpcHeightResolver.ResolveSpawnHeightResolution(npc, spawnPos, spawnWorld);
+            if (resolution.Height > 0f && MathF.Abs(resolution.Height - spawnPos.Z) > 0.01f)
+                npc.Transform.Local.SetPosition(spawnPos.X, spawnPos.Y, resolution.Height);
+        }
+
         if (npc.Ai != null)
         {
             npc.Ai.HomePosition = npc.Transform.World.Position;

@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Threading;
 using AAEmu.Game.Models.Tasks;
+using Task = AAEmu.Game.Models.Tasks.Task;
 using AAEmu.Game.Models.Game.Char;
 
 namespace AAEmu.Game.Scripts.Commands;

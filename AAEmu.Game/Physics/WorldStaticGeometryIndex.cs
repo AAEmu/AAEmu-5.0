@@ -1,9 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Numerics;
 
 using AAEmu.Game.Core.Managers.World;
+using AAEmu.Game.Models.CryEngine;
 using AAEmu.Game.Models.CryEngine.Objects;
 using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Utils;
@@ -24,13 +23,14 @@ internal interface IStaticGeometryEntry
 
 /// <summary>
 /// Represents a single static brush instance in world space.
-/// Triangles are built from the AABB corners of the brush (approximate representation —
-/// no CGF mesh loader is available in this project build).
+/// Triangles are lazily loaded from the CGF model on first raycast.
 /// </summary>
 internal sealed class StaticBrushEntry : IStaticGeometryEntry
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     public required ObjectDataType1Brush Brush { get; init; }
+    public required string ModelPath { get; init; }
+    public required string MaterialPath { get; init; }
     public required JBoundingBox WorldAabb { get; init; }
     public required JVector CellOffset { get; init; }
     public required int SourceCellX { get; init; }
@@ -40,12 +40,12 @@ internal sealed class StaticBrushEntry : IStaticGeometryEntry
     public required int MinGridCellY { get; init; }
     public required int MaxGridCellY { get; init; }
 
+    // Lazy-loaded transformed triangles for exact raycasting.
     private List<JTriangle> _transformedTriangles;
     private readonly object _meshLock = new();
 
     /// <summary>
-    /// Builds approximate triangles from the 8 corner points of the AABB.
-    /// Produces 12 triangles (6 faces × 2 triangles) that form a box mesh.
+    /// Gets or builds the transformed triangles for this brush instance.
     /// </summary>
     public List<JTriangle> GetTransformedTriangles()
     {
@@ -59,45 +59,39 @@ internal sealed class StaticBrushEntry : IStaticGeometryEntry
 
             try
             {
-                var min = WorldAabb.Min;
-                var max = WorldAabb.Max;
+                var localTriangles = CryEngineModelHelper.MakeModel(ModelPath, MaterialPath);
+                if (localTriangles == null || localTriangles.Count == 0)
+                {
+                    _transformedTriangles = [];
+                    return _transformedTriangles;
+                }
 
-                // 8 corners of the AABB (Jitter coords: X=world X, Y=world Z(up), Z=world Y)
-                var c000 = new JVector(min.X, min.Y, min.Z);
-                var c100 = new JVector(max.X, min.Y, min.Z);
-                var c010 = new JVector(min.X, max.Y, min.Z);
-                var c110 = new JVector(max.X, max.Y, min.Z);
-                var c001 = new JVector(min.X, min.Y, max.Z);
-                var c101 = new JVector(max.X, min.Y, max.Z);
-                var c011 = new JVector(min.X, max.Y, max.Z);
-                var c111 = new JVector(max.X, max.Y, max.Z);
+                // Build transform matrix from brush data.
+                // This mirrors PhysicsManager.AddBrushObject transform logic.
+                var m3X3 = new JMatrix(
+                    Brush.Matrix3X4.M11, Brush.Matrix3X4.M31, Brush.Matrix3X4.M21,
+                    Brush.Matrix3X4.M13, Brush.Matrix3X4.M33, Brush.Matrix3X4.M23,
+                    Brush.Matrix3X4.M12, Brush.Matrix3X4.M32, Brush.Matrix3X4.M22);
 
-                // 12 triangles (top and bottom faces are most important for raycast-down)
-                _transformedTriangles =
-                [
-                    // Top face (Y = max.Y) — primary floor surface
-                    new JTriangle(c010, c110, c111),
-                    new JTriangle(c010, c111, c011),
-                    // Bottom face
-                    new JTriangle(c000, c101, c100),
-                    new JTriangle(c000, c001, c101),
-                    // Front face
-                    new JTriangle(c001, c111, c101),
-                    new JTriangle(c001, c011, c111),
-                    // Back face
-                    new JTriangle(c000, c100, c110),
-                    new JTriangle(c000, c110, c010),
-                    // Left face
-                    new JTriangle(c000, c010, c011),
-                    new JTriangle(c000, c011, c001),
-                    // Right face
-                    new JTriangle(c100, c101, c111),
-                    new JTriangle(c100, c111, c110),
-                ];
+                var translation = CellOffset + new JVector(
+                    Brush.Matrix3X4.M14,
+                    Brush.Matrix3X4.M34,
+                    Brush.Matrix3X4.M24);
+
+                var transformed = new List<JTriangle>(localTriangles.Count);
+                foreach (var tri in localTriangles)
+                {
+                    var v0 = JVector.Transform(tri.V0, m3X3) + translation;
+                    var v1 = JVector.Transform(tri.V1, m3X3) + translation;
+                    var v2 = JVector.Transform(tri.V2, m3X3) + translation;
+                    transformed.Add(new JTriangle(v0, v1, v2));
+                }
+
+                _transformedTriangles = transformed;
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Failed to build AABB triangles for brush {0}", Brush.Name);
+                Logger.Warn(ex, "Failed to load transformed triangles for brush {0} (model: {1})", Brush.Name, ModelPath);
                 _transformedTriangles = [];
             }
 
@@ -296,7 +290,7 @@ public sealed class WorldStaticGeometryIndex
     /// Registers a brush object into the spatial index.
     /// The world AABB is derived from StartPos/EndPos of the brush data.
     /// </summary>
-    public void AddBrush(WorldCell cell, ObjectDataType1Brush brush)
+    public void AddBrush(WorldCell cell, ObjectDataType1Brush brush, string modelPath, string materialPath)
     {
         if (brush == null)
             return;
@@ -349,6 +343,8 @@ public sealed class WorldStaticGeometryIndex
         var entry = new StaticBrushEntry
         {
             Brush = brush,
+            ModelPath = modelPath ?? string.Empty,
+            MaterialPath = materialPath ?? string.Empty,
             WorldAabb = worldAabb,
             CellOffset = cellOffset,
             SourceCellX = cell.CellX,
