@@ -204,6 +204,16 @@ public class WorldCell
 
         var cellFolder = Path.Combine("game", "worlds", Template.Name, "cells", cellFileName);
 
+        // Load statobjs.dat — contains the list of CGF model paths indexed by brush.PathId
+        MaterialsFile statObjsFiles = null;
+        var statObjsFile = Path.Combine(cellFolder, "client", "statobjs.dat");
+        if (ClientFileManager.FileExists(statObjsFile))
+        {
+            var statObjs = new MaterialsFile(statObjsFile);
+            if (statObjs.ReadFile())
+                statObjsFiles = statObjs;
+        }
+
         var objectDatFile = Path.Combine(cellFolder, "client", "object.dat");
         if (ClientFileManager.FileExists(objectDatFile))
         {
@@ -221,7 +231,7 @@ public class WorldCell
             // that uses this template. This enables floor-height raycasting and wall-segment checks for NPCs.
             if (LoadedObjectDat != null && LoadedObjectDat.PrefabsList.Count > 0)
             {
-                IngestObjectDatIntoStaticGeometryIndex(LoadedObjectDat);
+                IngestObjectDatIntoStaticGeometryIndex(LoadedObjectDat, statObjsFiles);
             }
         }
 
@@ -274,7 +284,7 @@ public class WorldCell
     /// into the <see cref="WorldStaticGeometryIndex"/> of every loaded world that uses this template.
     /// Called once after object.dat is successfully parsed for this cell.
     /// </summary>
-    private void IngestObjectDatIntoStaticGeometryIndex(ObjectsFile objectsFile)
+    private void IngestObjectDatIntoStaticGeometryIndex(ObjectsFile objectsFile, MaterialsFile statObjsFiles)
     {
         try
         {
@@ -295,8 +305,9 @@ public class WorldCell
                     switch (prefab)
                     {
                         case ObjectDataType1Brush brush:
-                            var modelPath = brush.PathId >= 0 && brush.PathId < objectsFile.AssetPathsList.Count
-                                ? objectsFile.AssetPathsList[brush.PathId]?.Name ?? string.Empty
+                            // statobjs.dat contains the CGF model paths indexed by brush.PathId
+                            var modelPath = statObjsFiles != null && brush.PathId >= 0 && brush.PathId < statObjsFiles.MaterialList.Count
+                                ? statObjsFiles.MaterialList[brush.PathId]
                                 : string.Empty;
                             index.AddBrush(this, brush, modelPath, string.Empty);
                             break;

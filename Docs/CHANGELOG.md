@@ -1,5 +1,25 @@
 # CHANGELOG - AAEmu 5.0.7.0 Private Server
 
+## [5.0.7.0 private] - 03.06.2026 (2)
+
+### Bug Fixes / Исправления
+
+**fix(geodata): исправить путь к CGF-моделям brush-объектов через statobjs.dat**
+
+На русском:
+- `WorldCell.IngestObjectDatIntoStaticGeometryIndex` использовал `objectsFile.AssetPathsList[brush.PathId]` (список материалов/текстур) вместо CGF-путей — в результате `CryEngineModelHelper.MakeModel` получал неверный путь и возвращал пустую геометрию
+- Добавлена загрузка `statobjs.dat` рядом с `object.dat`: файл содержит список CGF-путей в том же формате, что `MaterialsFile`, индексированный по `brush.PathId`
+- Теперь путь к модели берётся из `statObjsFiles.MaterialList[brush.PathId]` — реальная геометрия brush-объектов загружается корректно, raycast `TryRaycastDown` находит полы зданий/помостов
+
+English:
+- `WorldCell.IngestObjectDatIntoStaticGeometryIndex` was indexing into `objectsFile.AssetPathsList` (material/texture paths) with `brush.PathId`, so `CryEngineModelHelper.MakeModel` received the wrong path and returned empty triangles — static floor geometry was missing
+- Added loading of `statobjs.dat` (same directory as `object.dat`): this file holds the list of CGF model paths, identical in format to `MaterialsFile`, indexed by `brush.PathId`
+- Model path is now taken from `statObjsFiles.MaterialList[brush.PathId]`; real brush geometry loads correctly and `TryRaycastDown` can now hit building floors and raised platforms
+
+Files changed: `AAEmu.Game/Models/Game/World/WorldCell.cs`
+
+---
+
 ## [5.0.7.0 private] - 03.06.2026
 
 ### Features / Новые функции
