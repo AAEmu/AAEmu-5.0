@@ -60,11 +60,16 @@ public static class NpcSpawnHeightOverrides
         // 3. Flying NPCs.
         if (npc.CanFly)
         {
-            var terrainH = world.Template?.GetHeight(spawnerX, spawnerY) ?? spawnerZ;
+            // Use world.GetHeight (World.HeightMaps, loaded at startup) rather than
+            // world.Template.GetHeight (per-cell WorldCell.HeightMap), which may return 0
+            // when per-cell heightmap.dat files are absent from the client data bundle.
+            var terrainH = world.GetHeight(spawnerX, spawnerY);
+            if (terrainH <= 0f) terrainH = spawnerZ;
             return new NpcSpawnHeightResolution(MathF.Max(spawnerZ, terrainH), NpcHeightAnchorKind.Air);
         }
 
-        var terrainHeight = world.Template?.GetHeight(spawnerX, spawnerY) ?? spawnerZ;
+        var terrainHeight = world.GetHeight(spawnerX, spawnerY);
+        if (terrainHeight <= 0f) terrainHeight = spawnerZ;
 
         // 4. Cave exception: spawner is clearly below terrain (underground layer).
         if (spawnerZ < terrainHeight - CaveThreshold)
@@ -158,7 +163,7 @@ public static class NpcSpawnHeightOverrides
         out float height)
     {
         height = 0f;
-        if (world?.Template == null || world.Physics?.StaticGeometryIndex == null)
+        if (world?.Physics?.StaticGeometryIndex == null)
             return false;
 
         var probe = new Vector3(x, y, spawnerZ);

@@ -276,6 +276,35 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
                 }
 
                 world.Water = new WaterBodies();
+
+                // Create the WorldTemplate (lazy cell-data grid) and wire it to this World instance.
+                // WorldTemplate holds per-cell heightmap and static-geometry data (object.dat/statobjs.dat)
+                // that is loaded on first access via VerifyCellLoaded().
+                // Without this assignment world.Template stays null, IngestObjectDatIntoStaticGeometryIndex
+                // skips all worlds, and StaticGeometryIndex is never populated (NPCs fall through elevated floors).
+                if (world.CellX > 0 && world.CellY > 0)
+                {
+                    var worldTemplate = new WorldTemplate
+                    {
+                        Id = id,
+                        Name = world.Name,
+                        CellX = world.CellX,
+                        CellY = world.CellY,
+                        MaxHeight = world.MaxHeight,
+                        HeightMaxCoefficient = world.HeightMaxCoefficient,
+                        OceanLevel = world.OceanLevel,
+                        ZoneKeys = world.ZoneKeys,
+                        XmlWorldZones = world.XmlWorldZones,
+                        SpawnPosition = world.SpawnPosition,
+                        ZoneKeyByRegions = new uint[world.CellX * SECTORS_PER_CELL, world.CellY * SECTORS_PER_CELL]
+                    };
+                    var cells = new WorldCell[world.CellX, world.CellY];
+                    for (var cy = 0; cy < world.CellY; cy++)
+                        for (var cx = 0; cx < world.CellX; cx++)
+                            cells[cx, cy] = new WorldCell(cx, cy, worldTemplate);
+                    worldTemplate.Cells = cells;
+                    world.Template = worldTemplate;
+                }
             }
         }
 

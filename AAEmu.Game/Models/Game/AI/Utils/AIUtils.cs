@@ -42,8 +42,16 @@ public static class AIUtils
             ai.IdlePosition.Y + randomOffset.Y,
             ai.IdlePosition.Z);
 
-        // Get terrain height at new position
-        newPosition.Z = ai.Owner.GetReferenceHeight(newPosition.X, newPosition.Y, newPosition.Z, ai.Owner.Transform.ZoneId);
+        // For terrain-anchored NPCs, resolve height from world/navmesh so they follow terrain undulations.
+        // For elevated anchors (Spawner, InteriorFloor, etc.) keep the idle Z — GetReferenceHeight would
+        // return raw terrain height when static geometry data is absent, causing the roaming target to be
+        // placed underground and triggering StopMovement → Z-snap to terrain on arrival.
+        var heightState = ai.HeightState;
+        if (!heightState.IsInitialized || heightState.AnchorKind == NpcHeightAnchorKind.Terrain)
+        {
+            newPosition.Z = ai.Owner.GetReferenceHeight(newPosition.X, newPosition.Y, newPosition.Z, ai.Owner.Transform.ZoneId);
+        }
+        // else: keep IdlePosition.Z — NPC roams at its anchor elevation
 
         return newPosition;
     }

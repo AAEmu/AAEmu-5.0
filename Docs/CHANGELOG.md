@@ -1,5 +1,101 @@
 # CHANGELOG - AAEmu 5.0.7.0 Private Server
 
+## [5.0.7.0 private] - 03.06.2026 (6)
+
+### Bug Fixes / Исправления
+
+**fix(npc-movement): защитить Z-координату НПС при движении на поднятых площадках**
+
+На русском:
+- `Npc.StopMovement()`, `Npc.LookTowards()` и `Simulation.cs` безусловно вызывали `GetReferenceHeight`, который возвращает высоту рельефа — НПС на поднятых помостах «проваливался» на уровень земли при остановке или смене направления
+- Теперь вызов `GetReferenceHeight` защищён проверкой якоря: если `HeightState.AnchorKind != Terrain` и якорь инициализирован, Z не перезаписывается
+- Дополнительно `CalcNextRoamingPosition` (AIUtils.cs) сохраняет `IdlePosition.Z` для НПС с якорем не Terrain, чтобы цель блуждания была на правильной высоте
+- `RoamingBehavior` использует 3D-расстояние (`includeZAxis=true`) для проверки достижения цели — исключает ложное срабатывание «дошёл до цели», когда НПС находится над/под точкой назначения
+
+English:
+- `Npc.StopMovement()`, `Npc.LookTowards()` and `Simulation.cs` unconditionally called `GetReferenceHeight`, which returns terrain height — NPCs on raised platforms/floors were snapped to terrain Z on every stop or turn
+- The `GetReferenceHeight` call is now guarded: if `HeightState.AnchorKind != Terrain` and the anchor is initialized, Z is preserved as-is
+- `CalcNextRoamingPosition` (AIUtils.cs) keeps `IdlePosition.Z` for non-Terrain-anchored NPCs so roaming targets are placed at the correct elevated height
+- `RoamingBehavior` uses 3D distance (`includeZAxis=true`) for arrival detection — prevents false "reached destination" when the NPC is above/below the target
+
+Files changed: `AAEmu.Game/Models/Game/NPChar/Npc.cs`, `AAEmu.Game/Models/Game/Units/Route/Simulation.cs`, `AAEmu.Game/Models/Game/AI/Utils/AIUtils.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/Common/RoamingBehavior.cs`
+
+Tests added: `AAEmu.UnitTests/Game/Models/Game/NPChar/NpcHeightAnchorTests.cs`
+
+Docs added: `Docs/npc-height-anchor-and-worldtemplate-initialization-2026-06-03.md`
+
+---
+
+## [5.0.7.0 private] - 03.06.2026 (5)
+
+### Bug Fixes / Исправления
+
+**fix(geodata): исправить вычисление высоты рельефа при спавне НПС и в геоданных**
+
+На русском:
+- `NpcSpawnHeightOverrides.GetSpawnHeight` использовал `world.Template?.GetHeight()` — этот метод использует `WorldCell.HeightMap`, загружаемый из per-cell `heightmap.dat`. Если эти файлы недоступны в клиентских данных, возвращается 0, что нарушало логику определения якоря: все НПС воспринимались как «подвешенные высоко над рельефом» и получали якорь `Spawner` вместо `Terrain`
+- Заменено на `world.GetHeight(x, y)` — использует `World.HeightMaps`, загружаемый глобально при старте сервера, гарантированно содержит данные
+- То же исправление в `WorldStaticGeometryIndex.TryCollectLayerHeights` и `TryGetClosestDistinctLayerPoint`
+- Убраны избыточные проверки `world?.Template == null` в этих методах — они работают без WorldTemplate
+- Также исправлен `IndexOutOfRangeException` в `WorldTemplate.GetBaiByPos` и `GetRawHeightMapHeight`: граничные проверки `> CellX/CellY` заменены на `>= CellX/CellY`, добавлена проверка bounds в `GetBaiByPos`. Краш происходил в каждом тике `MoveTowards`, прерывая движение всех НПС
+
+English:
+- `NpcSpawnHeightOverrides.GetSpawnHeight` used `world.Template?.GetHeight()` — backed by `WorldCell.HeightMap` from per-cell `heightmap.dat`. When those files are absent from the client bundle, the method returns 0, breaking anchor logic: all NPCs appeared "suspended high above terrain" and got `Spawner` instead of `Terrain` anchor
+- Replaced with `world.GetHeight(x, y)` — backed by `World.HeightMaps`, the global heightmap loaded at startup, always populated
+- Same fix in `WorldStaticGeometryIndex.TryCollectLayerHeights` and `TryGetClosestDistinctLayerPoint`
+- Removed redundant `world?.Template == null` guards in these methods — they work without WorldTemplate
+- Also fixed `IndexOutOfRangeException` in `WorldTemplate.GetBaiByPos` and `GetRawHeightMapHeight`: boundary checks `> CellX/CellY` changed to `>= CellX/CellY`, bounds guard added in `GetBaiByPos`. The crash was firing every `MoveTowards` tick, aborting movement for all NPCs
+
+Files changed: `AAEmu.Game/Models/Game/NPChar/NpcSpawnHeightOverrides.cs`, `AAEmu.Game/Physics/WorldStaticGeometryIndex.cs`, `AAEmu.Game/Models/Game/World/WorldTemplate.cs`
+
+---
+
+## [5.0.7.0 private] - 03.06.2026 (4)
+
+### Bug Fixes / Исправления
+
+**fix(geodata): создавать WorldTemplate и WorldCell при загрузке мира**
+
+На русском:
+- `World.Template` никогда не присваивался → всегда `null`
+- Следствие: `IngestObjectDatIntoStaticGeometryIndex` скипал все миры (проверка `world.Template?.Id != Template.Id` → всегда `true`) → `StaticGeometryIndex` всегда пустой → `TryRaycastDown` ничего не находит → НПС не получают якорь `InteriorFloor`
+- Следствие: `world.Template?.GetHeight(...)` возвращал `null` → `VerifyCellLoaded()` никогда не вызывался → `object.dat`/`statobjs.dat` никогда не загружались → это объясняет почему сервер загружается очень быстро по сравнению с 3.5
+- Следствие: `PhysicsManager.InitializeTerrain()` пропускался (`SimulationWorld?.Template == null`)
+- Исправление: в `WorldManager.Load()`, после создания `World`, создаётся `WorldTemplate` с нужными полями, массив `WorldCell[CellX, CellY]` заполняется экземплярами (незагруженными — данные загружаются лениво при первом обращении), и присваивается `world.Template`
+
+English:
+- `World.Template` was never assigned → always `null`
+- Consequence: `IngestObjectDatIntoStaticGeometryIndex` skipped all worlds (`world.Template?.Id != Template.Id` always `true`) → `StaticGeometryIndex` always empty → `TryRaycastDown` finds nothing → NPCs never get `InteriorFloor` anchor
+- Consequence: `world.Template?.GetHeight(...)` returned null → `VerifyCellLoaded()` never called → `object.dat`/`statobjs.dat` never loaded → explains why server starts much faster than 3.5
+- Consequence: `PhysicsManager.InitializeTerrain()` was skipped (`SimulationWorld?.Template == null`)
+- Fix: in `WorldManager.Load()`, after creating the `World`, create a `WorldTemplate` with matching properties, populate `WorldCell[CellX, CellY]` with unloaded cell instances (data loads lazily on first access), and assign `world.Template`
+
+Files changed: `AAEmu.Game/Core/Managers/World/WorldManager.cs`
+
+---
+
+## [5.0.7.0 private] - 03.06.2026 (3)
+
+### Bug Fixes / Исправления
+
+**fix(npc-movement): не сбрасывать Z НПС на высоту рельефа при движении/остановке на поднятых полах**
+
+На русском:
+- `Npc.StopMovement()`, `Npc.LookTowards()` и `Simulation.cs` безусловно вызывали `GetReferenceHeight`, который возвращает высоту рельефа — НПС на поднятых помостах «проваливался» на уровень земли при остановке или смене направления
+- Теперь вызов `GetReferenceHeight` защищён проверкой якоря: если `HeightState.AnchorKind != Terrain` и якорь инициализирован, Z не перезаписывается
+- Дополнительно `CalcNextRoamingPosition` (AIUtils.cs) сохраняет `IdlePosition.Z` для НПС с якорем не Terrain, чтобы цель блуждания была на правильной высоте
+- `RoamingBehavior` использует 3D-расстояние (`includeZAxis=true`) для проверки достижения цели — исключает ложное срабатывание «дошёл до цели», когда НПС находится над/под точкой назначения
+
+English:
+- `Npc.StopMovement()`, `Npc.LookTowards()` and `Simulation.cs` unconditionally called `GetReferenceHeight`, which returns terrain height — NPCs on raised platforms/floors were snapped to terrain Z on every stop or turn
+- The `GetReferenceHeight` call is now guarded: if `HeightState.AnchorKind != Terrain` and the anchor is initialized, Z is preserved as-is
+- `CalcNextRoamingPosition` (AIUtils.cs) keeps `IdlePosition.Z` for non-Terrain-anchored NPCs so roaming targets are placed at the correct elevated height
+- `RoamingBehavior` uses 3D distance (`includeZAxis=true`) for arrival detection — prevents false "reached destination" when the NPC is above/below the target
+
+Files changed: `AAEmu.Game/Models/Game/NPChar/Npc.cs`, `AAEmu.Game/Models/Game/Units/Route/Simulation.cs`, `AAEmu.Game/Models/Game/AI/Utils/AIUtils.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/Common/RoamingBehavior.cs`
+
+---
+
 ## [5.0.7.0 private] - 03.06.2026 (2)
 
 ### Bug Fixes / Исправления
@@ -65,7 +161,7 @@ Files changed: `AAEmu.Game/Models/Game/World/WorldCell.cs`
 
 Files changed: `WorldStaticGeometryIndex.cs` (new), `World.cs`, `WorldCell.cs`, `PhysicsManager.cs`, `AiGeodataManager.cs`, `BaseCombatBehavior.cs`, `FlytrapAttackBehavior.cs`, `PathNode.cs`, `Configurations.cs`, `WorldManager.cs`, `NpcHeightResolver.cs` (new), `NpcHeightState.cs` (new), `NpcSpawnHeightOverrides.cs` (new), `NpcWaterSurfaceOverrides.cs` (new), `NpcPathfindingImproved.cs` (new), `NpcDoodadObstacleClassifier.cs` (new), `BaseBaiLoader.cs`, `AiShape.cs`, `AppConfiguration.NpcPathfinding.cs` (new), `NpcAi.cs`
 
-Tests added: `WorldInstanceStaticGeometrySegmentTests.cs`, `WorldGetHeightStaticGeoTests.cs`, `StaticGeoDataServiceTests.cs`, `AiGeodataManagerTests.cs`, `PathNodeTests.cs`, `AIUtilsTests.cs`, `BaseCombatBehaviorTests.cs`, `NpcPathfindingImprovedTests.cs`
+Tests added: `WorldInstanceStaticGeometrySegmentTests.cs`, `WorldGetHeightStaticGeoTests.cs`, `StaticGeoDataServiceTests.cs`, `AiGeodataManagerTests.cs`, `PathNodeTests.cs`, `AIUtilsTests.cs`, `BaseCombatBehaviorTests.cs`, `NpcPathfindingImprovedTests.cs`, `WorldTemplateBoundsTests.cs`, `NpcHeightAnchorTests.cs`
 
 ---
 
@@ -400,6 +496,12 @@ English:
 ---
 
 ## Commit History / История коммитов
+
+### 2026-06-03
+
+- **fix(npc-movement): защитить Z-координату НПС при движении на поднятых площадках** — защита высоты НПС от сброса на рельеф при якере не Terrain
+- **fix(geodata): исправить вычисление высоты рельефа при спавне НПС и в геоданных** — использовать глобальную heightmap вместо per-cell
+- **fix(geodata): создавать WorldTemplate и WorldCell при загрузке мира** — инициализация WorldTemplate после создания World
 
 ### 2026-05-31
 

@@ -157,8 +157,10 @@ public class RoamingBehavior : BaseCombatBehavior
                 return;
         }
 
-        // Check if we reached the target by distance
-        var distanceToTarget = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, _targetRoamPosition);
+        // Check if we reached the target by 3D distance (includeZAxis=true).
+        // 2D-only check would falsely complete roaming when the NPC is directly above/below
+        // the target, causing StopMovement to snap Z to terrain via GetReferenceHeight.
+        var distanceToTarget = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, _targetRoamPosition, true);
         if (distanceToTarget < MinimumRoamingDistance)
         {
             CompleteRoaming();

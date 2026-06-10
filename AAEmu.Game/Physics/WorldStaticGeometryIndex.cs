@@ -935,7 +935,7 @@ public static class StaticGeoDataService
         out Vector3 closestPoint)
     {
         closestPoint = Vector3.Zero;
-        if (world?.Template == null || world.Physics?.StaticGeometryIndex == null)
+        if (world?.Physics?.StaticGeometryIndex == null)
             return false;
 
         var radius = maxDistanceAllowed;
@@ -961,7 +961,7 @@ public static class StaticGeoDataService
             if (!TryCollectLayerHeights(world, sampleX, sampleY, referenceHeight, hitHeights))
                 continue;
 
-            var terrainHeight = world.Template.GetHeight(sampleX, sampleY);
+            var terrainHeight = world.GetHeight(sampleX, sampleY);
             var dx = sampleX - pos.X;
             var dy = sampleY - pos.Y;
             var distanceSq = dx * dx + dy * dy;
@@ -1002,10 +1002,10 @@ public static class StaticGeoDataService
 
     private static bool TryCollectLayerHeights(World world, float x, float y, float referenceHeight, List<float> hitHeights)
     {
-        if (world?.Template == null || world.Physics?.StaticGeometryIndex == null)
+        if (world?.Physics?.StaticGeometryIndex == null)
             return false;
 
-        var terrainHeight = world.Template.GetHeight(x, y);
+        var terrainHeight = world.GetHeight(x, y);
         var probeStart = MathF.Max(referenceHeight, terrainHeight) + ProbeStartOffsetUp;
         return world.Physics.StaticGeometryIndex.TryCollectRaycastDownHits(x, y, probeStart, hitHeights, MaxCollectedHits);
     }

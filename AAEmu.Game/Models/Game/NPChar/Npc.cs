@@ -1285,7 +1285,9 @@ public partial class Npc : Unit
     {
         // TODO Take the current coordinates
         var currentPosition = Transform.Local.ClonePosition();
-        currentPosition.Z = GetReferenceHeight(currentPosition.X, currentPosition.Y, currentPosition.Z, Transform.ZoneId);
+        var looksHeightState = Ai?.HeightState;
+        if (looksHeightState == null || !looksHeightState.IsInitialized || looksHeightState.AnchorKind == NpcHeightAnchorKind.Terrain)
+            currentPosition.Z = GetReferenceHeight(currentPosition.X, currentPosition.Y, currentPosition.Z, Transform.ZoneId);
         Transform.Local.SetPosition(currentPosition);
         var moveType = (UnitMoveType)MoveType.GetType(MoveTypeEnum.Unit);
         var angle = MathUtil.CalculateAngleFrom(currentPosition, other);
@@ -1318,7 +1320,9 @@ public partial class Npc : Unit
     {
         // TODO Take the current coordinates
         var currentPosition = Transform.Local.ClonePosition();
-        currentPosition.Z = GetReferenceHeight(currentPosition.X, currentPosition.Y, currentPosition.Z, Transform.ZoneId);
+        var stopHeightState = Ai?.HeightState;
+        if (stopHeightState == null || !stopHeightState.IsInitialized || stopHeightState.AnchorKind == NpcHeightAnchorKind.Terrain)
+            currentPosition.Z = GetReferenceHeight(currentPosition.X, currentPosition.Y, currentPosition.Z, Transform.ZoneId);
         Transform.Local.SetPosition(currentPosition);
 
         var moveType = (UnitMoveType)MoveType.GetType(MoveTypeEnum.Unit);
