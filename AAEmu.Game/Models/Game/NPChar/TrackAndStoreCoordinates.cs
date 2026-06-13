@@ -27,48 +27,137 @@ public partial class Npc
 
     #region Public API
 
+    /// <summary>
+    /// Returns the reference Z height for a NPC at a given XY. This is the function called by
+    /// SCUnitStatePacket, Simulation, and Npc movement code to "snap" the NPC's Z value before
+    /// sending it to clients and before applying movement updates.
+    ///
+    /// History / why this function looks the way it does:
+    ///
+    /// The legacy implementation only respected the spawn position for two specific behaviours
+    /// (HoldPosition and Idle). Every other state — including the very common SpawningBehavior
+    /// that runs immediately after spawn, and RunCommandSet which is the default afterwards —
+    /// fell through to GetHeight(), which returns the .bai navmesh Z (or heightmap as fallback).
+    /// For NPCs spawned on small unmeshed sub-structures (piers, low decks, blocks, stairs,
+    /// stalls, roots) this completely undid the careful work of NpcSpawnerNpc.ResolveSpawnZ:
+    /// the resolver could correctly keep spawnZ = 120.80 on a sub-structure, but the next
+    /// SCUnitStatePacket would call GetReferenceHeight, hit the GetHeight() branch, get back
+    /// the BAI floor (119.31), and overwrite the NPC's Z back down. The NPC visually sank
+    /// into the structure and sometimes became un-clickable.
+    ///
+    /// V5 fix (near-home guard): if the NPC is geographically close to its spawn position
+    /// (XY distance below SpawnHomeXyRadius, default 3 m), trust Spawner.Position.Z. This
+    /// covers the moment-of-spawn case and any NPC standing on its spawn spot (most static
+    /// village / dungeon NPCs). Patrolling or aggro'd NPCs that have moved away from spawn
+    /// still fall through to terrain lookup as before.
+    ///
+    /// V6 fix (smooth blend): V5 used a hard binary cut at SpawnHomeXyRadius. Field data
+    /// (NPC objId 16221) showed the failure mode: a near-stationary NPC whose XY jitters by
+    /// ~4 m repeatedly crosses the 3 m boundary, so its Z snaps between the correct spawn Z
+    /// (161.65) and an aberrant terrain/bai Z (166.69) tick to tick — visible as the NPC
+    /// popping up and down by several metres while standing still. V6 keeps the spawner Z
+    /// fully trusted inside SpawnHomeXyRadius, then BLENDS linearly to the terrain height
+    /// across an additional SpawnHomeBlendBand metres. Beyond radius+band the terrain height
+    /// is used exactly as before. Because the transition is continuous, small XY jitter no
+    /// longer causes a discontinuous Z jump, and an NPC that genuinely walks away is handed
+    /// off to terrain tracking smoothly.
+    ///
+    /// Behavior summary:
+    ///   0. ai null            -> GetHeight (legacy)
+    ///   1. CanFly             -> Spawner.Position.Z (legacy)
+    ///   2. Hold/Idle          -> Spawner.Position.Z (legacy)
+    ///   3. Near home in XY    -> Spawner.Position.Z (V5/V6)
+    ///   4. Terrain lookup     -> GetHeight (legacy)
+    ///   5. Terrain lookup = 0 -> Spawner.Position.Z fallback (legacy)
+    /// </summary>
     public float GetReferenceHeight(float x, float y, float z, uint zoneId)
     {
         float finalHeight;
 
-        // 1. Если NPC может летать, то высота берется из позиции спавнера
+        // 0. If AI is null, fall through to terrain lookup
+        if (Ai == null)
+        {
+            finalHeight = WorldManager.Instance.GetHeight(zoneId, x, y, z);
+            if (finalHeight != 0f)
+                return finalHeight;
+            return Spawner?.Position.Z ?? Transform.World.Position.Z;
+        }
+
+        // 1. If NPC can fly, use spawner Z
         if (CanFly)
         {
             finalHeight = Spawner.Position.Z;
             return finalHeight;
         }
 
-        // 2. Для HoldPositionBehavior и IdleBehavior высота берется из спавнера
-        if (Ai != null)
+        // 2. For HoldPositionBehavior and IdleBehavior, use spawner Z
+        switch (Ai.GetCurrentBehavior())
         {
-            switch (Ai.GetCurrentBehavior())
+            case HoldPositionBehavior:
+            case IdleBehavior:
+                finalHeight = Spawner.Position.Z;
+                return finalHeight;
+        }
+
+        // 3. (V5/V6) Near-home guard, SMOOTHED.
+        //
+        // V5 used a hard binary cut at SpawnHomeXyRadius: inside -> spawner Z, outside ->
+        // terrain Z. Field data (NPC objId 16221) showed the failure mode: a near-stationary
+        // NPC whose XY jitters by ~4 m repeatedly crosses the 3 m boundary, so its Z snaps
+        // between the correct spawn Z (161.65) and an aberrant terrain/bai Z (166.69) tick to
+        // tick — visible as the NPC popping up and down by several metres while standing still.
+        //
+        // V6 keeps the spawner Z fully trusted inside SpawnHomeXyRadius, then BLENDS linearly
+        // to the terrain height across an additional SpawnHomeBlendBand metres. Beyond
+        // radius+band the terrain height is used exactly as before. Because the transition is
+        // continuous, small XY jitter no longer causes a discontinuous Z jump, and an NPC that
+        // genuinely walks away is handed off to terrain tracking smoothly.
+        var spawner = Spawner;
+        if (spawner != null)
+        {
+            var spawnCfg = AppConfiguration.Instance.World?.SpawnHeight;
+            var homeRadius = spawnCfg?.SpawnHomeXyRadius ?? 3.0f;
+            var blendBand = spawnCfg?.SpawnHomeBlendBand ?? 4.0f;
+            if (homeRadius > 0f)
             {
-                case HoldPositionBehavior:
-                case IdleBehavior:
-                    finalHeight = Spawner.Position.Z;
-                    return finalHeight;
+                var dx = x - spawner.Position.X;
+                var dy = y - spawner.Position.Y;
+                var dist = MathF.Sqrt(dx * dx + dy * dy);
+
+                if (dist <= homeRadius)
+                {
+                    // Fully home: trust the resolver-chosen spawn Z.
+                    return spawner.Position.Z;
+                }
+
+                if (blendBand > 0f && dist <= homeRadius + blendBand)
+                {
+                    // Transition zone: blend spawn Z -> terrain Z by how far into the band we are.
+                    var terrainZ = WorldManager.Instance.GetHeight(zoneId, x, y, z);
+                    if (terrainZ == 0f)
+                        terrainZ = spawner.Position.Z; // terrain lookup failed; stay on spawn Z
+                    var t = (dist - homeRadius) / blendBand; // 0 at inner edge, 1 at outer edge
+                    return spawner.Position.Z + (terrainZ - spawner.Position.Z) * t;
+                }
             }
         }
 
-        // 3. Получение высоты из базы данных NavMesh
+        // 4. Terrain height retrieval
+        // Try NavMesh first (most accurate for NPCs on navmesh)
         var navMeshHeight = WorldManager.Instance.GetCorrectNpcHeight(zoneId, x, y, z);
         if (!float.IsNaN(navMeshHeight))
         {
-            finalHeight = navMeshHeight;
-            //Logger.Debug($"Получили данные по высоте из NavMesh");
-            return finalHeight;
+            return navMeshHeight;
         }
 
-        // 4. Получение высоты местности (передаём z для корректного резолва raised floors через static geo)
-        var worldHeight = WorldManager.Instance.GetHeight(zoneId, x, y, z);
-        if (worldHeight != 0/* && Math.Abs(worldHeight - Spawner.Position.Z) <= 0.1f*/)
+        // Fall back to world height (heightmap + static geometry)
+        finalHeight = WorldManager.Instance.GetHeight(zoneId, x, y, z);
+        if (finalHeight != 0f)
         {
-            finalHeight = worldHeight;
-            //Logger.Debug($"Получили данные по высоте местности");
             return finalHeight;
         }
 
-        // 5. Берем высоту по умолчанию
+        // 5. Take the default height
         return Spawner?.Position.Z ?? Transform.World.Position.Z;
     }
 

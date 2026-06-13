@@ -19,6 +19,38 @@
         "MaxInstances": 32,
         "TargetPhysicsTps": 25.0,
         "WindModel": "Official",
-        "ActabilityRate": 1.0
+        "ActabilityRate": 1.0,
+        "SpawnHeight": {
+            "Enabled": true,
+            "MaxBaiDistance2D": 6.0,
+            "MaxBaiVsHeightmapDelta": 3.0,
+            "MaxSnapDistance": 5.0,
+            "UnmeshedStructureThreshold": 1.5,
+            "MaxDownwardSnapDistance": 0.5,
+            "SpawnHomeXyRadius": 3.0,
+            "SpawnHomeBlendBand": 4.0,
+            "PreferHeightmapForGroundZ": true,
+            "LogResolution": false,
+            "UseLegacyBai3DLookup": false,
+            "TrustBaiNearSpawnZ": false
+        },
+        "Pathing": {
+            "Enabled": true,
+            "RepathTargetMovedDistance": 2.5,
+            "RepathCooldownMs": 350,
+            "SkipStartNodeIfBehindRadius": 4.0,
+            "WaypointReachTolerance": 0.9,
+            "DirectFallbackWhenVisible": true,
+            "ReducePathMaxSkip": 4,
+            "UseCumulativeAStarCost": true,
+            "MaxStartEndNode2D": 8.0,
+            "LogPathfinding": false,
+            "UseOptimizedAStar": true,
+            "UseEdgeLengthCost": true,
+            "LoopBudgetDistanceMultiplier": 15,
+            "LoopBudgetBase": 100,
+            "RejectDetourPaths": false,
+            "DetourRejectThreshold": 5.0
+        }
     }
 }

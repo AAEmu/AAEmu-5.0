@@ -159,7 +159,7 @@ public class FlytrapAttackBehavior : BaseCombatBehavior
         }
 
         // Follow current path if available
-        if (Ai.PathNode?.findPath?.Count > 0 && !Ai.PathNode.findPath[0].Equals(Point.Zero))
+        if (Ai.PathNode?.FoundPath?.Count > 0 && !Ai.PathNode.FoundPath.Peek().Equals(Vector3.Zero))
         {
             ProcessPathMovement(gimmickPosition, moveDistance, moveDistanceZ);
         }
@@ -171,7 +171,7 @@ public class FlytrapAttackBehavior : BaseCombatBehavior
 
     private bool ShouldUpdatePath(BaseUnit target)
     {
-        return Ai.PathNode?.findPath?.Count == 0 && target != null && Ai.PathNode?.pos2 != null;
+        return Ai.PathNode?.FoundPath?.Count == 0 && target != null && Ai.PathNode?.EndPointPos != null;
     }
 
     private void UpdatePath(Unit target)
@@ -180,7 +180,7 @@ public class FlytrapAttackBehavior : BaseCombatBehavior
             return;
 
         Ai.Owner.FindPath(target);
-        Ai.PathNode.pos2 = new Point(target.Transform.World.Position.X, target.Transform.World.Position.Y, target.Transform.World.Position.Z);
+        Ai.PathNode.EndPointPos = new Vector3(target.Transform.World.Position.X, target.Transform.World.Position.Y, target.Transform.World.Position.Z);
         Ai.Owner.Gimmick.Target = target.Transform.World.Position;
     }
 
@@ -201,15 +201,14 @@ public class FlytrapAttackBehavior : BaseCombatBehavior
 
     private void AdvanceToNextPathPoint()
     {
-        Ai.PathNode.Current++;
-        if (Ai.PathNode.Current >= Ai.PathNode.findPath.Count)
+        Ai.PathNode.FoundPath.Dequeue();
+        if (Ai.PathNode.FoundPath.Count == 0)
         {
             Ai.Owner.Gimmick.StopMovement();
-            Ai.PathNode.findPath = [];
             return;
         }
 
-        Ai.PathNode.Position = Ai.PathNode.findPath[(int)Ai.PathNode.Current];
+        Ai.PathNode.Position = Ai.PathNode.FoundPath.Peek();
     }
 
     private void ProcessDirectMovement(Vector3 targetPosition, float moveDistance, float moveDistanceZ, float distanceToTarget)

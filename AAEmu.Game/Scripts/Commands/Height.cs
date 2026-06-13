@@ -33,9 +33,12 @@ public class Height : ICommand
             targetPlayer = WorldManager.GetTargetOrSelf(character, args[0], out var firstarg);
         }
 
-        var height = WorldManager.Instance.GetHeight(targetPlayer.Transform.ZoneId,
-            targetPlayer.Transform.World.Position.X, targetPlayer.Transform.World.Position.Y);
+        var pos = targetPlayer.Transform.World.Position;
+        var zoneId = targetPlayer.Transform.ZoneId;
+
+        // Use the new GetHeight with referenceZ for better accuracy
+        var height = WorldManager.Instance.GetHeight(zoneId, pos.X, pos.Y, pos.Z);
         CommandManager.SendNormalText(this, messageOutput,
-            $"{targetPlayer.Name} Z-Pos: {character.Transform.World.Position.Z} - Floor: {height}");
+            $"{targetPlayer.Name} Z-Pos: {pos.Z:F2} - Floor: {height:F2}");
     }
 }

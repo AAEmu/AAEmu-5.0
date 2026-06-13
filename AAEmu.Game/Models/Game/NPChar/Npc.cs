@@ -1356,21 +1356,207 @@ public partial class Npc : Unit
         Ai.AlreadyTargeted = other != null;
     }
 
+    /// <summary>
+    /// Compute an A* path from this NPC to the given abuser and store it as the followable path
+    /// in <c>Ai.PathNode.FoundPath</c>.
+    ///
+    /// Pathfinding fix highlights (see <c>World.Pathing</c> tunables):
+    ///
+    /// 1) Start-node skip — the legacy code injected the .bai node closest to the NPC as the
+    ///    first followable waypoint. When that node was slightly behind the NPC (typical near
+    ///    spawn), the NPC visibly back-tracked toward spawn before chasing the player. We now
+    ///    drop that first waypoint when the NPC is already within
+    ///    <see cref="PathingConfig.SkipStartNodeIfBehindRadius"/> metres of it AND the node is
+    ///    further from the target than the NPC currently is. The node remains the *technical*
+    ///    A* start (so the route is still computed correctly), it is just not enqueued for the
+    ///    movement loop.
+    ///
+    /// 2) Configurable smoothing — <see cref="AiGeoDataManager.ReducePath"/>
+    ///    is now called with the configurable <see cref="PathingConfig.ReducePathMaxSkip"/>
+    ///    instead of a hardcoded 10. Setting it to 0 disables smoothing.
+    ///
+    /// 3) Repath book-keeping — <see cref="PathNode.LastTargetObjId"/>,
+    ///    <see cref="PathNode.LastTargetPosAtRepath"/>, <see cref="PathNode.LastRepathTime"/>
+    ///    are written so <c>BaseCombatBehavior.MoveInRange</c> can decide whether to repath.
+    ///
+    /// 4) Failure semantics — if A* returns <see cref="PathStatus.Failed"/>, we leave
+    ///    <c>FoundPath</c> empty (instead of pretending success). Movement code will then either
+    ///    stand still or fall back to a direct chase, depending on
+    ///    <see cref="PathingConfig.DirectFallbackWhenVisible"/>.
+    /// </summary>
     public void FindPath(Unit abuser)
     {
-        Ai.PathNode.pos1 = new Point(Transform.World.Position.X, Transform.World.Position.Y, Transform.World.Position.Z);
-        Ai.PathNode.pos2 = new Point(abuser.Transform.World.Position.X, abuser.Transform.World.Position.Y, abuser.Transform.World.Position.Z);
+        if (Ai?.PathNode == null || abuser == null)
+            return;
 
+        // Guard against null world or missing geodata — prevents NPE when the world
+        // is still loading or the navmesh has not been initialised yet.
+        if (ParentWorld?.Template?.GeoData == null)
+            return;
+
+        var pathCfg = AppConfiguration.Instance.World?.Pathing;
+        var enabled = pathCfg?.Enabled ?? true;
+        var reduceSkip = pathCfg?.ReducePathMaxSkip ?? 4;
+        var skipStartRadius = pathCfg?.SkipStartNodeIfBehindRadius ?? 4.0f;
+        var logPathfinding = pathCfg?.LogPathfinding ?? false;
+        var rejectDetours = pathCfg?.RejectDetourPaths ?? false;
+        var detourThreshold = pathCfg?.DetourRejectThreshold ?? 5.0f;
+
+        var npcPos = Transform.World.Position;
+        var targetPos = abuser.Transform.World.Position;
+
+        Ai.PathNode.StartPointPos = new Vector3(npcPos.X, npcPos.Y, npcPos.Z);
+        Ai.PathNode.EndPointPos = new Vector3(targetPos.X, targetPos.Y, targetPos.Z);
         Ai.PathNode.ZoneKey = Transform.ZoneId;
-        Ai.PathNode.findPath = Ai.PathNode.FindPath(Ai.PathNode.pos1, Ai.PathNode.pos2);
 
-        Logger.Trace($"AStar: points found Total: {Ai.PathNode.findPath?.Count ?? 0}");
-        if (Ai.PathNode.findPath != null)
+        var resList = Ai.PathNode.FindPath(ParentWorld, Ai.PathNode.StartPointPos, Ai.PathNode.EndPointPos);
+
+        // If A* found nothing, leave the queue empty. BaseCombatBehavior.MoveInRange will see
+        // the empty queue and trigger the direct-fallback (if visible & configured).
+        if (resList == null || resList.Count == 0)
         {
-            for (var i = 0; i < Ai.PathNode.findPath.Count; i++)
+            Ai.PathNode.FoundPath = new Queue<Vector3>();
+            Ai.PathNode.LastTargetObjId = abuser.ObjId;
+            Ai.PathNode.LastTargetPosAtRepath = targetPos;
+            Ai.PathNode.LastRepathTime = DateTime.UtcNow;
+
+            if (logPathfinding)
+                Logger.Info($"[Pathfind] FAILED  npc={ObjId}:{TemplateId} target={abuser.ObjId} start={npcPos} end={targetPos} reason={Ai.PathNode.LastRepathReason}");
+
+            return;
+        }
+
+        // Always make sure the very last waypoint is the real target position, not a snapped
+        // navmesh node that could be 1-2m off. PathNode.FindPath already appends EndPointPos at
+        // the end; this is just a safety re-add in case of edge cases.
+        if (resList.Count == 0 || Vector3.Distance(resList[^1], targetPos) > 0.01f)
+            resList.Add(targetPos);
+
+        var rawCount = resList.Count;
+
+        // Apply smoothing (configurable, 0 disables).
+        var reducedPath = ParentWorld.Template.GeoData.ReducePath(resList, reduceSkip);
+
+        // ------------------------------------------------------------
+        // Pathological-path rejection (v3 fix).
+        //
+        // Live test showed: NPC standing 3 m from target receives a 14-node A* path whose
+        // first 4 waypoints sit ~50 m AWAY from both NPC and target, only the 5th waypoint
+        // is the actual goal. The NPC then "runs backwards" 50 m and comes back. Visually
+        // catastrophic and a strict regression vs. the legacy code.
+        //
+        // Root cause is on A* side: when the navmesh start-node is on a sub-graph cycle, A*
+        // explores it before reaching the goal node, and 'Partial' returns the first 4-5
+        // exploration steps + the goal as last waypoint.
+        //
+        // Mitigation: if the FIRST followable waypoint is further from the target than the
+        // NPC itself by a large margin AND the NPC is far from that waypoint, the path is
+        // a detour. Drop the entire path; BaseCombatBehavior's DirectFallback will take
+        // over (chase straight at target if visible). Direct chase is far better than a
+        // 100 m detour, even when it means the NPC bumps into a wall.
+        // ------------------------------------------------------------
+        var distNpcToTarget = Vector3.Distance(npcPos, targetPos);
+        var pathRejected = false;
+        if (enabled && rejectDetours && reducedPath.Count >= 2)
+        {
+            var firstWp = reducedPath.Peek();
+            var distFirstToTarget = Vector3.Distance(firstWp, targetPos);
+            var distNpcToFirst = Vector3.Distance(npcPos, firstWp);
+
+            // "First waypoint goes really wrong" detector:
+            // - it is further from target than NPC was, by more than the configured threshold
+            //   (so it's a real detour, not just sub-meter snapping noise);
+            // - AND the NPC has to walk more than that threshold to even reach the detour wp.
+            // With the v6 optimized A* this almost never fires; it stays as a safety net and is
+            // fully switchable via World.Pathing.RejectDetourPaths / DetourRejectThreshold.
+            if (distFirstToTarget > distNpcToTarget + detourThreshold && distNpcToFirst > detourThreshold)
             {
-                Logger.Trace($"AStar: point {i} coordinates X:{Ai.PathNode.findPath[i].X}, Y:{Ai.PathNode.findPath[i].Y}, Z:{Ai.PathNode.findPath[i].Z}");
+                reducedPath.Clear();
+                pathRejected = true;
             }
+        }
+
+        // ------------------------------------------------------------
+        // Multi-waypoint head-skip: drop the leading waypoints if they
+        // would make the NPC visibly back-track toward spawn.
+        //
+        // v4 oscillation fix: live data showed NPCs ping-ponging between two BAI
+        // nodes when the NPC sat between them. Symptom: snake-like 1-2m rollback as
+        // the NPC walked. Root cause: my v3 criterion required distNpcToFirst < 4m
+        // to allow skip. As soon as the NPC drifted slightly away from the start
+        // node (because it had been moving toward target), the skip stopped firing
+        // and the path's first waypoint (still the same node behind it) was followed.
+        //
+        // Replaced with a direction-based test: skip the waypoint if it lies in the
+        // half-space "behind" the NPC relative to the target direction. Specifically,
+        // if the NPC->wp vector points more than 90 degrees away from the NPC->target
+        // vector, the waypoint is a backward step regardless of its distance to the
+        // NPC. Implemented as a dot-product test (cheaper than acos): the projection
+        // of (wp - npc) onto (target - npc) must be positive AND distFirstToTarget
+        // must remain greater than distNpcToTarget for a skip — both safeties together
+        // avoid skipping legitimate detour waypoints around obstacles.
+        //
+        // Note: we keep the multi-skip cap to avoid pathological full-path drops.
+        // ------------------------------------------------------------
+        var skipCount = 0;
+        const int maxHeadSkip = 3;
+        if (!pathRejected && enabled && reducedPath.Count >= 2)
+        {
+            while (skipCount < maxHeadSkip && reducedPath.Count >= 2)
+            {
+                var firstWp = reducedPath.Peek();
+                var distFirstToTarget = Vector3.Distance(firstWp, targetPos);
+
+                // Direction-based "is this waypoint behind us?" test.
+                // toTarget: where we want to go. toWp: where the waypoint sits relative to NPC.
+                // Dot < 0 means toWp points away from toTarget — the waypoint is BEHIND.
+                var toTarget = targetPos - npcPos;
+                var toWp = firstWp - npcPos;
+                var dot = toTarget.X * toWp.X + toTarget.Y * toWp.Y + toTarget.Z * toWp.Z;
+                var isBehind = dot < 0f;
+
+                // Only skip when:
+                //   (a) the waypoint is geometrically behind us (dot < 0), AND
+                //   (b) following it would still increase distance to target.
+                // Condition (b) is a redundant safety — if the waypoint is behind AND closer
+                // to target, it's still a useful step. Real backward-then-forward path stays
+                // intact.
+                if (isBehind && distFirstToTarget > distNpcToTarget)
+                {
+                    reducedPath.Dequeue();
+                    skipCount++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        var startNodeSkipped = skipCount > 0;
+
+        // Tag the diagnostic reason if the path was rejected as a detour.
+        if (pathRejected)
+            Ai.PathNode.LastRepathReason = (Ai.PathNode.LastRepathReason ?? string.Empty) + "+Rejected";
+
+        Ai.PathNode.FoundPath = reducedPath;
+        Ai.PathNode.LastRawNodeCount = rawCount;
+        Ai.PathNode.LastStartNodeSkipped = startNodeSkipped;
+        Ai.PathNode.LastTargetObjId = abuser.ObjId;
+        Ai.PathNode.LastTargetPosAtRepath = targetPos;
+        Ai.PathNode.LastRepathTime = DateTime.UtcNow;
+
+        if (logPathfinding)
+        {
+            var status = Ai.PathNode.LastStatus;
+            Logger.Info($"[Pathfind] {status,-9} npc={ObjId}:{TemplateId} target={abuser.ObjId} startReal={npcPos} startNode={Ai.PathNode.LastStartNodePos} endReal={targetPos} endNode={Ai.PathNode.LastEndNodePos} raw={rawCount} reduced={reducedPath.Count} skip={startNodeSkipped} reason={Ai.PathNode.LastRepathReason}");
+        }
+
+        // Player-side debug echo — gated behind the same LogPathfinding flag that controls
+        // the server-side pathfinding log. Only sent to GMs (access level >= 100) to avoid
+        // cluttering the chat of regular players in multi-NPC combat scenarios.
+        if (logPathfinding && abuser is Character player && player.AccessLevel >= 100)
+        {
+            player.SendMessage($"[Pathfind] Aggro from {ObjId}, path in {Ai.PathNode.FoundPath.Count}/{rawCount} steps (status={Ai.PathNode.LastStatus}, skip={startNodeSkipped})");
         }
     }
 
@@ -1382,13 +1568,8 @@ public partial class Npc : Unit
     public Vector3 GetClosestPoint(BaseUnit unit)
     {
         // TODO взять точку к которой движемся
-        if (Ai.PathNode.findPath == null)
-            return Vector3.Zero;
-
-        var pos = new Point(unit.Transform.World.Position.X, unit.Transform.World.Position.Y, unit.Transform.World.Position.Z);
-        Ai.PathNode.Current = AiGeoDataManager.FindClosestIndexPoint(Ai.PathNode.findPath, pos);
-
-        return new Vector3(Ai.PathNode.findPath[(int)Ai.PathNode.Current].X, Ai.PathNode.findPath[(int)Ai.PathNode.Current].Y, Ai.PathNode.findPath[(int)Ai.PathNode.Current].Z);
+        // Legacy method - not used in V6 pathfinding
+        return Vector3.Zero;
     }
 
     public void DoDespawn(Npc npc)
@@ -1469,6 +1650,9 @@ public partial class Npc : Unit
             Ai.Owner = null;
             Ai = null;
         }
+
+        // Clean up spawn-height diagnostic entry to prevent unbounded memory growth
+        SpawnHeightDiagnostics.Instance.Remove(ObjId);
 
         base.Delete();
     }

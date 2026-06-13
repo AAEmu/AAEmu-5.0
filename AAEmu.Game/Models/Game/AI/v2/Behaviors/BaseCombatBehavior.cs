@@ -7,6 +7,7 @@ using System.Numerics;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
+using AAEmu.Game.Models.Game.AI.AStar;
 using AAEmu.Game.Models.Game.AI.v2.Framework;
 using AAEmu.Game.Models.Game.AI.v2.Params;
 using AAEmu.Game.Models.Game.AI.v2.Params.Almighty;
@@ -157,67 +158,201 @@ public abstract class BaseCombatBehavior : Behavior
 
     private void HandleGeoDataMovement(Vector3 currentPosition, Vector3 targetPosition, float speed, byte moveFlags, float range, float distanceToTarget)
     {
-        UpdatePathIfNeeded(targetPosition);
+        // ----------------------------------------------------------------
+        // PATHFINDING FIX (v4): repath cadence and waypoint consumption.
+        //
+        // Legacy bug (1) - inverted repath condition:
+        //   The old code was `if (|EndPointPos - target.pos| <= ModelSize) FindPath()`,
+        //   i.e. "repath when the cached endpoint is *close to* the target". The intent
+        //   per the comment was the opposite ("if not at target position, recompute").
+        //   The flipped condition meant NPCs kept following stale routes whenever the
+        //   player kited away, producing the "monster takes detours" symptom.
+        //
+        // Legacy bug (2) - AlreadyTargeted as a global pathfinding lock:
+        //   Once Npc.SetTarget(other) is called, Ai.AlreadyTargeted=true and UpdateTarget()
+        //   stops calling FindPath even when the target moves. Repath now goes through
+        //   this MoveInRange instead, gated on a real movement threshold + a cooldown.
+        //
+        // Legacy bug (3) - waypoint reach tolerance == attack range:
+        //   The old code used `range` (attack start range, scaled) as both "should I move
+        //   closer" and "have I reached this waypoint". For a melee NPC with range ~3m,
+        //   that consumed waypoints far too eagerly. We now use a dedicated waypoint
+        //   tolerance (default 0.9 m) for waypoint dequeue, and keep `range` only for the
+        //   final-target stop decision.
+        // ----------------------------------------------------------------
 
-        if (Ai.PathNode?.findPath.Count > 0 && !Ai.PathNode.findPath[0].Equals(Point.Zero))
+        var pathCfg = AppConfiguration.Instance.World?.Pathing;
+        var pathingEnabled = pathCfg?.Enabled ?? true;
+        var repathDist = pathCfg?.RepathTargetMovedDistance ?? 2.5f;
+        var repathCooldownMs = pathCfg?.RepathCooldownMs ?? 350;
+        var waypointTol = pathCfg?.WaypointReachTolerance ?? 0.9f;
+        var directFallback = pathCfg?.DirectFallbackWhenVisible ?? true;
+        var rejectDetours = pathCfg?.RejectDetourPaths ?? false;
+        var detourThreshold = pathCfg?.DetourRejectThreshold ?? 5.0f;
+
+        if (Ai.PathNode != null && pathingEnabled)
         {
-            HandlePathMovement(currentPosition, speed, moveFlags, range);
+            // Decide whether we need to recompute the path.
+            var pathEmpty = Ai.PathNode.FoundPath == null || Ai.PathNode.FoundPath.Count == 0;
+            var targetChanged = Ai.PathNode.LastTargetObjId != (Ai.Owner.CurrentTarget?.ObjId ?? 0);
+            var targetMoved = !targetChanged
+                              && Vector3.Distance(Ai.PathNode.LastTargetPosAtRepath, targetPosition) > repathDist;
+            var cooldownReady = (DateTime.UtcNow - Ai.PathNode.LastRepathTime).TotalMilliseconds >= repathCooldownMs;
+
+            // PATHFINDING v2 fix: do NOT repath when the NPC is already in attack range.
+            //
+            // Live data showed NPCs entering an infinite repath loop the moment they
+            // arrived at the target: every tick consumed the (now-empty) path queue,
+            // every tick saw pathEmpty=true, every tick re-ran FindPath. The NPC was
+            // already in range and should have been attacking — but BaseCombatBehavior
+            // kept calling MoveInRange and we kept repathing pointlessly. The CSV showed
+            // this as 6+ consecutive "PathEmpty" log lines on a stationary NPC standing
+            // 0.4m from the target.
+            //
+            // Skip repath when distanceToTarget <= range. The outer movement code will
+            // see the empty path and call StopMovement() — which is exactly what we want
+            // when the NPC has reached its attack position.
+            var inAttackRange = distanceToTarget <= range;
+
+            if ((pathEmpty || targetChanged || targetMoved) && cooldownReady && !inAttackRange)
+            {
+                // Tag the reason for diagnostics.
+                Ai.PathNode.LastRepathReason = pathEmpty ? "PathEmpty"
+                    : targetChanged ? "NewTarget"
+                    : "TargetMoved";
+
+                // Only measure time if the Warn log will actually be emitted.
+                if (Logger.IsWarnEnabled)
+                {
+                    var sw = Stopwatch.StartNew();
+                    if (Ai.Owner.CurrentTarget is Unit targetUnit)
+                        Ai.Owner.FindPath(targetUnit);
+                    sw.Stop();
+                    if (sw.ElapsedMilliseconds >= 1)
+                        Logger.Warn($"FindPath took {sw.Elapsed} for Ai.Owner.ObjId:{Ai.Owner.ObjId}, Owner.TemplateId {Ai.Owner.TemplateId} @ {Ai.Owner.Transform}");
+                }
+                else
+                {
+                    if (Ai.Owner.CurrentTarget is Unit targetUnit)
+                        Ai.Owner.FindPath(targetUnit);
+                }
+
+                Ai.PathNode.EndPointPos = new Vector3(targetPosition.X, targetPosition.Y, targetPosition.Z);
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Movement consumption.
+        //
+        // PATHFINDING v3 fix: detour-detection guard.
+        //
+        // Even with the path-rejection in Npc.FindPath, a stale path computed before
+        // the patch upgrade or in a previous repath can sit in FoundPath and lead the
+        // NPC the wrong way. Before consuming the next waypoint, double-check it is
+        // not a flagrant detour vs. the current target position. If it is, drop the
+        // entire path and let the DirectFallback / range logic take over.
+        //
+        // v6: this guard is disabled by default (RejectDetourPaths=false) because the
+        // optimized A* no longer produces backward paths. Kept as an emergency net,
+        // gated on the same config flag + threshold as Npc.FindPath.
+        // ----------------------------------------------------------------
+        if (pathingEnabled
+            && rejectDetours
+            && Ai.PathNode != null
+            && Ai.PathNode.FoundPath != null
+            && Ai.PathNode.FoundPath.Count > 0
+            && Ai.Owner.CurrentTarget != null)
+        {
+            var npcWorldPos = Ai.Owner.Transform.World.Position;
+            var tgtWorldPos = Ai.Owner.CurrentTarget.Transform.World.Position;
+            var nextWp = Ai.PathNode.FoundPath.Peek();
+            if (!nextWp.Equals(Vector3.Zero))
+            {
+                var dNpcTgt = Vector3.Distance(npcWorldPos, tgtWorldPos);
+                var dWpTgt = Vector3.Distance(nextWp, tgtWorldPos);
+                var dNpcWp = Vector3.Distance(npcWorldPos, nextWp);
+                if (dWpTgt > dNpcTgt + detourThreshold && dNpcWp > detourThreshold)
+                {
+                    Ai.PathNode.FoundPath.Clear();
+                    Ai.PathNode.LastStatus = PathStatus.DirectFallback;
+                }
+            }
+        }
+
+        if (Ai.PathNode != null)
+        {
+            if (Ai.PathNode.FoundPath != null && Ai.PathNode.FoundPath.Count > 0 && !Ai.PathNode.FoundPath.Peek().Equals(Vector3.Zero))
+            {
+                var nextPathPoint = Ai.PathNode.FoundPath.Peek();
+                var distanceToWaypoint = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, nextPathPoint, true);
+
+                // Waypoint dequeue uses dedicated tolerance, not attack range.
+                if (pathingEnabled && distanceToWaypoint <= waypointTol)
+                {
+                    Ai.PathNode.CurrentTargetPos = Ai.PathNode.FoundPath.Dequeue();
+
+                    // After consuming a waypoint, if there are still more, head to the next
+                    // one this same tick to avoid a 1-tick stall. Otherwise check distance
+                    // to the actual target to decide whether to keep moving or stop.
+                    if (Ai.PathNode.FoundPath.Count > 0)
+                    {
+                        nextPathPoint = Ai.PathNode.FoundPath.Peek();
+                        Ai.Owner.MoveTowards(nextPathPoint, (float)speed, moveFlags, waypointTol);
+                    }
+                    else
+                    {
+                        // Path consumed entirely. Use real target distance + attack range
+                        // for the final approach.
+                        distanceToTarget = Ai.Owner.GetDistanceTo(Ai.Owner.CurrentTarget, true);
+                        if (distanceToTarget > range)
+                            Ai.Owner.MoveTowards(targetPosition, (float)speed, moveFlags, range);
+                        else
+                            Ai.Owner.StopMovement();
+                    }
+                }
+                else
+                {
+                    // Still en route to the waypoint.
+                    // Legacy code used `range` (attack range) as MoveTowards's tolerance,
+                    // which would trip MoveTowards's "I'm close enough" early-return for
+                    // ranged NPCs. Keep using waypointTol for movement-side as well so
+                    // the NPC actually walks up to the waypoint before dequeuing.
+                    var moveTol = pathingEnabled ? waypointTol : range;
+                    Ai.Owner.MoveTowards(nextPathPoint, (float)speed, moveFlags, moveTol);
+                }
+            }
+            else
+            {
+                // No path available. Direct chase if visible, else stand still.
+                if (distanceToTarget > range)
+                {
+                    if (pathingEnabled && directFallback && Ai.Owner.UnitIsVisible(Ai.Owner.CurrentTarget))
+                    {
+                        // Mark so /pathmob can see we are not on a navmesh path.
+                        if (Ai.PathNode != null)
+                            Ai.PathNode.LastStatus = PathStatus.DirectFallback;
+                        Ai.Owner.MoveTowards(targetPosition, (float)speed, moveFlags, range);
+                    }
+                    else if (!pathingEnabled)
+                    {
+                        // Legacy behaviour.
+                        Ai.Owner.MoveTowards(targetPosition, (float)speed, moveFlags, range);
+                    }
+                    else
+                    {
+                        Ai.Owner.StopMovement();
+                    }
+                }
+                else
+                {
+                    Ai.Owner.StopMovement();
+                }
+            }
         }
         else
         {
             HandleDirectMovement(targetPosition, speed, moveFlags, range, distanceToTarget);
         }
-    }
-
-    private void UpdatePathIfNeeded(Vector3 targetPosition)
-    {
-        if (Ai.PathNode?.pos2 == null || !Ai.PathNode.pos2.Equals(new Point(targetPosition.X, targetPosition.Y, targetPosition.Z)))
-        {
-            if (Ai.Owner.CurrentTarget is Unit targetUnit)
-            {
-                var sw = Stopwatch.StartNew();
-                Ai.Owner.FindPath(targetUnit);
-                sw.Stop();
-
-                if (sw.Elapsed.Ticks >= TimeSpan.TicksPerMillisecond)
-                {
-                    Logger.Warn($"FindPath took {sw.Elapsed} for Unit {Ai.Owner.ObjId}:{Ai.Owner.TemplateId}");
-                }
-            }
-
-            if (Ai.PathNode != null)
-            {
-                Ai.PathNode.pos2 = new Point(targetPosition.X, targetPosition.Y, targetPosition.Z);
-            }
-        }
-    }
-
-    private void HandlePathMovement(Vector3 currentPosition, float speed, byte moveFlags, float range)
-    {
-        var pathPosition = new Vector3(Ai.PathNode.Position.X, Ai.PathNode.Position.Y, Ai.PathNode.Position.Z);
-        var distanceToPathPoint = MathUtil.CalculateDistance(currentPosition, pathPosition, true);
-
-        if (distanceToPathPoint > range)
-        {
-            Ai.Owner.MoveTowards(pathPosition, speed, moveFlags);
-        }
-        else
-        {
-            AdvanceToNextPathPoint();
-        }
-    }
-
-    private void AdvanceToNextPathPoint()
-    {
-        Ai.PathNode.Current++;
-        if (Ai.PathNode.Current >= Ai.PathNode.findPath.Count)
-        {
-            Ai.Owner.StopMovement();
-            Ai.PathNode.findPath = [];
-            return;
-        }
-
-        Ai.PathNode.Position = Ai.PathNode.findPath[(int)Ai.PathNode.Current];
     }
 
     private void HandleDirectMovement(Vector3 targetPosition, float speed, byte moveFlags, float range, float distanceToTarget)
@@ -341,9 +476,37 @@ public abstract class BaseCombatBehavior : Behavior
 
     private void UpdateTargetAndAggro(Unit target)
     {
-        if (Ai.Owner.CurrentAggroTarget != target && !Ai.AlreadyTargeted)
+        // PATHFINDING FIX (v4): do NOT gate FindPath on Ai.AlreadyTargeted.
+        //
+        // The legacy logic was:
+        //   if (CurrentAggroTarget != abuser && !AlreadyTargeted) FindPath(abuser);
+        //
+        // SetTarget() always sets AlreadyTargeted=true, so after the very first
+        // SetTarget call the FindPath path was permanently blocked here, and any
+        // subsequent target switch (taunt, multi-attacker tables, threat changes)
+        // never produced a new path. Combined with the inverted repath condition
+        // in MoveInRange, this is what makes NPCs "stick" to their first route.
+        //
+        // We now re-pathfind whenever the *aggro target* changes (legitimate target
+        // switch). The throttle / movement-based repath cadence in MoveInRange
+        // takes care of follow-up updates while pursuing the same target — that is
+        // a movement-frequency concern, not a target-change concern.
+        var pathingEnabled = AppConfiguration.Instance.World?.Pathing?.Enabled ?? true;
+        var aggroTargetChanged = Ai.Owner.CurrentAggroTarget != target;
+
+        if (pathingEnabled)
         {
-            if (CanUseNavigationPathing())
+            if (aggroTargetChanged)
+            {
+                if (Ai.PathNode != null)
+                    Ai.PathNode.LastRepathReason = "AggroTargetChanged";
+                Ai.Owner.FindPath(target);
+            }
+        }
+        else
+        {
+            // Legacy gate, kept for A/B testing.
+            if (Ai.Owner.CurrentAggroTarget != target && !Ai.AlreadyTargeted)
             {
                 Ai.Owner.FindPath(target);
             }

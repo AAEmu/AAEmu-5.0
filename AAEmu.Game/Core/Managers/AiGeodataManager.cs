@@ -14,6 +14,7 @@ using AAEmu.Game.Models.Game.AI.AStar;
 using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Models.Game.World.Transform;
 using AAEmu.Game.Utils.DB;
+using AAEmu.Game.Models;
 
 using NLog;
 
@@ -99,10 +100,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
     /// <summary>
     /// получить центр треугольника (пересечение медиан)
     /// </summary>
-    /// <param name="point1"></param>
-    /// <param name="point2"></param>
-    /// <param name="point3"></param>
-    /// <returns></returns>
     public static Vector3 TriangleCenter(Point point1, Point point2, Point point3)
     {
         var x = (point1.X + point2.X + point3.X) / 3;
@@ -148,14 +145,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
         return returnPoints;
     }
 
-    /// <summary>
-    /// Douglases the peucker reduction.
-    /// </summary>
-    /// <param name="points">The points.</param>
-    /// <param name="firstPointIndex">The first point.</param>
-    /// <param name="lastPointIndex">The last point.</param>
-    /// <param name="tolerance">The tolerance.</param>
-    /// <param name="pointIndexsToKeep">The point index to keep.</param>
     private static void DouglasPeuckerReduction(List<Point> points, int firstPointIndex, int lastPointIndex, double tolerance, ref List<int> pointIndexsToKeep)
     {
         double maxDistance = 0;
@@ -184,13 +173,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
         }
     }
 
-    /// <summary>
-    /// The distance of a point from a line made from point1 and point2.
-    /// </summary>
-    /// <param name="point1">The point1.</param>
-    /// <param name="point2">The point2.</param>
-    /// <param name="point">The point.</param>
-    /// <returns></returns>
     private static double PerpendicularDistance(Point point1, Point point2, Point point)
     {
         //Area = |(1/2)(x1y2 + x2y3 + x3y1 - x2y1 - x3y2 - x1y3)|   *Area of triangle
@@ -268,9 +250,71 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
 
     public float GetHeight(uint zoneKey, Vector3 pos)
     {
+        // A/B test toggle: if explicitly requested, use the original 3D-nearest behaviour.
+        var spawnCfg = AppConfiguration.Instance.World?.SpawnHeight;
+        if (spawnCfg != null && spawnCfg.UseLegacyBai3DLookup)
+            return GetHeightLegacy3D(zoneKey, pos);
+
+        var lookup = GetHeightDetailed(pos);
+
+        // GetHeightDetailed always returns the closest 2D node, even if it is far.
+        var maxXy = spawnCfg?.MaxBaiDistance2D ?? 6.0f;
+        var maxBaiVsHmap = spawnCfg?.MaxBaiVsHeightmapDelta ?? 3.0f;
+        var unmeshedThr = spawnCfg?.UnmeshedStructureThreshold ?? 1.5f;
+        var preferHmap = spawnCfg?.PreferHeightmapForGroundZ ?? true;
+
+        // V6 height fix: use the BILINEARLY INTERPOLATED heightmap
+        // Compute once and reuse to avoid redundant WorldManager lookups.
+        float hmapZ;
+        bool hmapValid;
+        try
+        {
+            var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+            var world = WorldManager.Instance.GetWorld(worldId);
+            hmapZ = world?.Template?.GetHeight(pos.X, pos.Y) ?? 0f;
+            hmapValid = !float.IsNaN(hmapZ) && !float.IsInfinity(hmapZ) && hmapZ != 0f;
+        }
+        catch (Exception ex)
+        {
+            Logger.Trace(ex, "GetHeight heightmap lookup failed for zone {0} at ({1:F2},{2:F2})", zoneKey, pos.X, pos.Y);
+            hmapZ = 0f;
+            hmapValid = false;
+        }
+
+        if (!lookup.HasValue)
+            return hmapValid ? hmapZ : 0f;
+
+        if (lookup.Distance2D > maxXy)
+            return hmapValid ? hmapZ : 0f;
+
+        // .bai is close enough in XY. Use the already-computed heightmap value.
+        if (hmapValid)
+        {
+            var hmapBaiAgree = MathF.Abs(lookup.BaiZ - hmapZ) <= maxBaiVsHmap;
+            var highestFloor = MathF.Max(lookup.BaiZ, hmapZ);
+
+            // Unmeshed structure (pier, dock, low platform)
+            if (hmapBaiAgree && (pos.Z - highestFloor) > unmeshedThr)
+                return pos.Z;
+
+            // V6 anti-levitation
+            if (preferHmap && hmapBaiAgree)
+                return hmapZ;
+
+            // bai and heightmap disagree - trust the .bai
+            return lookup.BaiZ;
+        }
+
+        // No valid heightmap - fall back to the .bai node.
+        return lookup.BaiZ;
+    }
+
+    /// <summary>
+    /// Legacy 3D-nearest .bai height lookup for A/B testing.
+    /// </summary>
+    internal float GetHeightLegacy3D(uint zoneKey, Vector3 pos)
+    {
         var rrr = 0f;
-        //var stopWatch = new Stopwatch();
-        //stopWatch.Start();
         try
         {
             var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
@@ -322,15 +366,12 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
                 }
             }
 
-            //Logger.Warn($"# Found near position aiNavigation, Z: {pointN.Z}...");
             rrr = minDistFa < minDistN ? pointFa.Z : pointN.Z;
         }
         catch
         {
             rrr = 0f;
         }
-        //stopWatch.Stop();
-        //Logger.Info($"GetHeight took {stopWatch.Elapsed}");
 
         return rrr;
     }
@@ -371,9 +412,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
     /// <summary>
     /// Find the nearest point
     /// </summary>
-    /// <param name="searchIn"></param>
-    /// <param name="compareTo"></param>
-    /// <returns>returns the index of the found point</returns>
     public static uint FindClosestIndexPoint(List<Point> searchIn, Point compareTo)
     {
         var minDistance = 0f;
@@ -418,7 +456,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
             }
 
             point = res.OrderBy(p => DistanceBetweenPoints(pos, p)).First();
-            //Logger.Warn($"# Found near position aiNavigation, Z: {pointN.Z}...");
             rrr = point.Z;
         }
         catch
@@ -446,15 +483,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
         _aiNavigationModifier = new Dictionary<byte, Dictionary<uint, List<Point>>>();
 
         var worlds = WorldManager.Instance.GetWorlds();
-        foreach (var world in worlds)
-        {
-            _aiNavigation = new Dictionary<byte, Dictionary<uint, List<AiNavigation>>>();
-            _areasMission = new Dictionary<byte, Dictionary<uint, string>>();
-            _forbiddenArea = new Dictionary<byte, Dictionary<uint, List<Point>>>();
-            _aiPath = new Dictionary<byte, Dictionary<uint, List<Point>>>();
-            _aiNavigationModifier = new Dictionary<byte, Dictionary<uint, List<Point>>>();
-        }
-
         foreach (var world in worlds)
         {
             // TODO добавить в worlds => Geodata
@@ -616,7 +644,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
     /// <summary>
     /// Hybrid blocker: checks if a segment between two world positions is blocked by either
     /// a forbidden area or by runtime static world geometry (walls, buildings, caves).
-    /// Mirrors source AiGeoDataManager.IsSegmentBlocked adapted for Singleton architecture.
     /// </summary>
     public bool IsSegmentBlocked(Vector3 start, Vector3 end, float extraRadius = 0f)
     {
@@ -646,7 +673,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
 
     /// <summary>
     /// Checks if a point is inside any forbidden zone polygon.
-    /// Adapted for Singleton architecture: looks up BAI data from WorldManager.
     /// </summary>
     public bool CheckImpossibleWalk(Vector3 point)
     {
@@ -674,7 +700,6 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
 
                 if (raisedLayerAnchorHeight.HasValue)
                 {
-                    // Allow raised indoor points that are on a distinct elevated floor layer.
                     allowedByRaisedIndoorLayer = true;
                     break;
                 }
@@ -798,10 +823,21 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
 
     /// <summary>
     /// Reduces a path by skipping intermediate nodes when direct line-of-sight is clear.
+    /// Pathfinding tunable: passing <c>maxNodeSkipCount <= 0</c> disables the smoothing
+    /// entirely and returns the raw path as a queue.
     /// </summary>
     public Queue<Vector3> ReducePath(List<Vector3> foundPath, int maxNodeSkipCount)
     {
         var res = new Queue<Vector3>();
+
+        // Smoothing disabled by configuration -> raw path.
+        if (maxNodeSkipCount <= 0)
+        {
+            foreach (var p in foundPath)
+                res.Enqueue(p);
+            return res;
+        }
+
         for (var startNodeIndex = 0; startNodeIndex < foundPath.Count; startNodeIndex++)
         {
             var startNode = foundPath[startNodeIndex];
@@ -944,6 +980,368 @@ public class AiGeoDataManager : Singleton<AiGeoDataManager>
             return Vector3.Zero; // outside segment bounds
 
         return lineAStart + d1 * t;
+    }
+
+    #endregion
+
+    #region V6 Height Diagnostics
+
+    /// <summary>
+    /// Result of a detailed .bai height lookup.
+    /// </summary>
+    public readonly struct BaiHeightLookup
+    {
+        public bool HasValue { get; init; }
+        public float BaiZ { get; init; }
+        public float Distance2D { get; init; }
+        public float DeltaZ { get; init; }
+        public byte NodeType { get; init; }
+        public string Source { get; init; }
+    }
+
+    /// <summary>
+    /// XY-based nearest-node lookup that also returns context.
+    /// Uses the legacy _aiNavigation data since NetMissionReader is not ported.
+    /// </summary>
+    public BaiHeightLookup GetHeightDetailed(Vector3 pos)
+    {
+        try
+        {
+            var bestZ = 0f;
+            var bestDist2DSq = float.MaxValue;
+            var bestDeltaZ = 0f;
+            var bestSource = string.Empty;
+            const float SameFootprintSlack = 1.5f;
+            const float SameFootprintSlackSq = SameFootprintSlack * SameFootprintSlack;
+            var found = false;
+
+            // Search through all loaded AI navigation points.
+            // Uses squared distance for comparisons to avoid expensive MathF.Sqrt in the hot loop.
+            foreach (var kvp in _aiNavigation)
+            {
+                foreach (var navList in kvp.Value.Values)
+                {
+                    foreach (var nav in navList)
+                    {
+                        var dx = nav.Position.X - pos.X;
+                        var dy = nav.Position.Y - pos.Y;
+                        var d2Sq = dx * dx + dy * dy;
+                        var dz = MathF.Abs(nav.Position.Z - pos.Z);
+
+                        var wins = d2Sq < bestDist2DSq - 1e-3f
+                                   || (d2Sq <= bestDist2DSq + SameFootprintSlackSq
+                                       && bestDist2DSq <= d2Sq + SameFootprintSlackSq
+                                       && dz < bestDeltaZ);
+
+                        if (wins)
+                        {
+                            bestDist2DSq = d2Sq;
+                            bestZ = nav.Position.Z;
+                            bestDeltaZ = dz;
+                            bestSource = "AiNavigation";
+                            found = true;
+                        }
+                    }
+                }
+            }
+
+            if (!found)
+                return default;
+
+            return new BaiHeightLookup
+            {
+                HasValue = true,
+                BaiZ = bestZ,
+                Distance2D = MathF.Sqrt(bestDist2DSq),
+                DeltaZ = bestZ - pos.Z,
+                NodeType = 0,
+                Source = bestSource,
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.Trace(ex, "GetHeightDetailed failed at {0}", pos);
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Pathfinding-grade closest-node lookup (used by A* start/end node selection).
+    /// Returns the position of the closest nav point, or null if none found.
+    /// </summary>
+    public Vector3? FindClosestPathNode2D(uint zoneKey, Vector3 pos, float maxDistance2D)
+    {
+        var spawnCfg = AppConfiguration.Instance.World?.SpawnHeight;
+        if (spawnCfg != null && spawnCfg.UseLegacyBai3DLookup)
+        {
+            var legacy = FindClosestNodeLegacy(zoneKey, pos);
+            return legacy;
+        }
+
+        var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+        Vector3 bestPos = Vector3.Zero;
+        var bestD2DSq = float.MaxValue;
+        var bestDeltaZ = float.MaxValue;
+        var found = false;
+
+        _aiNavigation.TryGetValue((byte)worldId, out var aiNav);
+        if (aiNav != null)
+        {
+            foreach (var navList in aiNav.Values)
+            {
+                foreach (var nav in navList)
+                {
+                    var dx = nav.Position.X - pos.X;
+                    var dy = nav.Position.Y - pos.Y;
+                    var d2DSq = dx * dx + dy * dy;
+                    var dz = MathF.Abs(nav.Position.Z - pos.Z);
+
+                    const float SameFootprintSlack = 1.5f;
+                    const float SameFootprintSlackSq = SameFootprintSlack * SameFootprintSlack;
+                    var wins = d2DSq < bestD2DSq - 1e-3f
+                               || (d2DSq <= bestD2DSq + SameFootprintSlackSq
+                                   && bestD2DSq <= d2DSq + SameFootprintSlackSq
+                                   && dz < bestDeltaZ);
+
+                    if (wins)
+                    {
+                        bestPos = new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z);
+                        bestD2DSq = d2DSq;
+                        bestDeltaZ = dz;
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        if (!found)
+            return null;
+
+        if (maxDistance2D > 0f && bestD2DSq > maxDistance2D * maxDistance2D)
+            return null;
+
+        return bestPos;
+    }
+
+    /// <summary>
+    /// Legacy 3D-nearest node lookup for A/B testing.
+    /// </summary>
+    private Vector3? FindClosestNodeLegacy(uint zoneKey, Vector3 pos)
+    {
+        var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+        Vector3 bestPos = Vector3.Zero;
+        var bestDist3D = float.MaxValue;
+        var found = false;
+
+        _aiNavigation.TryGetValue((byte)worldId, out var aiNav);
+        if (aiNav != null)
+        {
+            foreach (var navList in aiNav.Values)
+            {
+                foreach (var nav in navList)
+                {
+                    var dist3D = Vector3.DistanceSquared(new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z), pos);
+                    if (dist3D < bestDist3D)
+                    {
+                        bestDist3D = dist3D;
+                        bestPos = new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z);
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        return found ? bestPos : null;
+    }
+
+    /// <summary>
+    /// Bidirectional neighbour lookup (V6 pathfinding fix).
+    ///
+    /// Background: the .bai ai_navigation table stores each edge ONCE, with a
+    /// (StartPoint, EndPoint) pair. The legacy GetAvailablePoints only returned edges
+    /// where StartPoint == pointId, treating the undirected graph as directed.
+    /// This made A* unable to see roughly half of the reachable neighbours.
+    ///
+    /// This method returns the full set of neighbours: nodes reachable via outgoing
+    /// edges (StartPoint == pointId) AND nodes reachable via incoming edges
+    /// (EndPoint == pointId).
+    ///
+    /// Since we don't have NetMissionReader's LinkDescriptor.Length, we compute
+    /// the Euclidean distance as the link length.
+    /// </summary>
+    /// <param name="zoneKey">Zone ID to search in.</param>
+    /// <param name="pointId">The node ID to find neighbours for.</param>
+    /// <returns>List of (linkLength, neighbourPosition) pairs.</returns>
+    public List<(float LinkLength, Vector3 NeighbourPos)> GetNeighbourNodes(uint zoneKey, uint pointId)
+    {
+        var result = new List<(float, Vector3)>();
+        var seen = new HashSet<uint>();
+
+        var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+        _aiNavigation.TryGetValue((byte)worldId, out var aiNav);
+        if (aiNav == null)
+            return result;
+
+        // First, find the position of the current node
+        var currentPos = GetNodePosition(zoneKey, pointId);
+        if (!currentPos.HasValue)
+            return result;
+
+        var currentVector = currentPos.Value;
+
+        foreach (var navList in aiNav.Values)
+        {
+            foreach (var nav in navList)
+            {
+                var navPos = new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z);
+
+                // Outgoing edge: this node is the source (StartPoint)
+                // nav.Position is the END point position
+                if (nav.StartPoint == pointId && !seen.Contains(nav.EndPoint))
+                {
+                    seen.Add(nav.EndPoint);
+                    var length = Vector3.Distance(currentVector, navPos);
+                    result.Add((length, navPos));
+                }
+                // Incoming edge: this node is the target (EndPoint)
+                // We need to find the START point position
+                else if (nav.EndPoint == pointId && !seen.Contains(nav.StartPoint))
+                {
+                    seen.Add(nav.StartPoint);
+                    // For incoming edges, the neighbour is at a different position
+                    // We need to find the position of the StartPoint node
+                    var startNodePos = FindNodePositionByPointId(zoneKey, nav.StartPoint, nav);
+                    var length = Vector3.Distance(currentVector, startNodePos);
+                    result.Add((length, startNodePos));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Finds the position of a node by its point ID.
+    /// </summary>
+    private Vector3 FindNodePositionByPointId(uint zoneKey, uint pointId, AiNavigation fallbackNav)
+    {
+        var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+        _aiNavigation.TryGetValue((byte)worldId, out var aiNav);
+        if (aiNav == null)
+            return new Vector3(fallbackNav.Position.X, fallbackNav.Position.Y, fallbackNav.Position.Z);
+
+        foreach (var navList in aiNav.Values)
+        {
+            foreach (var nav in navList)
+            {
+                if (nav.StartPoint == pointId)
+                    return new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z);
+            }
+        }
+
+        return new Vector3(fallbackNav.Position.X, fallbackNav.Position.Y, fallbackNav.Position.Z);
+    }
+
+    /// <summary>
+    /// Gets the position of a node by its ID within a zone.
+    /// </summary>
+    private Vector3? GetNodePosition(uint zoneKey, uint pointId)
+    {
+        var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+        _aiNavigation.TryGetValue((byte)worldId, out var aiNav);
+        if (aiNav == null)
+            return null;
+
+        foreach (var navList in aiNav.Values)
+        {
+            foreach (var nav in navList)
+            {
+                if (nav.StartPoint == pointId)
+                    return new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gets the end point position for a given start point.
+    /// </summary>
+    private Vector3? GetEndPointPosition(uint zoneKey, uint startPointId)
+    {
+        var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+        _aiNavigation.TryGetValue((byte)worldId, out var aiNav);
+        if (aiNav == null)
+            return null;
+
+        foreach (var navList in aiNav.Values)
+        {
+            foreach (var nav in navList)
+            {
+                if (nav.StartPoint == startPointId)
+                    return new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gets neighbours by position — finds the closest node and returns its neighbours.
+    /// This is the main entry point for pathfinding.
+    /// </summary>
+    public List<(float LinkLength, Vector3 NeighbourPos)> GetNeighbourNodesByPosition(uint zoneKey, Vector3 pos)
+    {
+        // Find the closest node to this position
+        var closestNode = FindClosestNodeByPosition(zoneKey, pos);
+        if (closestNode == null)
+            return [];
+
+        return GetNeighbourNodes(zoneKey, closestNode.Value.nodeId);
+    }
+
+    /// <summary>
+    /// Legacy wrapper for backward compatibility.
+    /// </summary>
+    public List<(float LinkLength, Vector3 NeighbourPos)> GetNeighbourNodes(Vector3 pos)
+    {
+        // Find the closest node to this position and get its neighbours
+        return GetNeighbourNodesByPosition(0, pos);
+    }
+
+    /// <summary>
+    /// Finds the closest node to a position and returns its ID and position.
+    /// </summary>
+    private (uint nodeId, Vector3 position)? FindClosestNodeByPosition(uint zoneKey, Vector3 pos)
+    {
+        var worldId = WorldManager.Instance.GetWorldIdByZone(zoneKey);
+        Vector3 bestPos = Vector3.Zero;
+        var bestDist = float.MaxValue;
+        var bestNodeId = 0u;
+        var found = false;
+
+        _aiNavigation.TryGetValue((byte)worldId, out var aiNav);
+        if (aiNav != null)
+        {
+            foreach (var navList in aiNav.Values)
+            {
+                foreach (var nav in navList)
+                {
+                    var dx = nav.Position.X - pos.X;
+                    var dy = nav.Position.Y - pos.Y;
+                    var dist = dx * dx + dy * dy;
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        bestPos = new Vector3(nav.Position.X, nav.Position.Y, nav.Position.Z);
+                        bestNodeId = nav.StartPoint;
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        return found ? (bestNodeId, bestPos) : null;
     }
 
     #endregion

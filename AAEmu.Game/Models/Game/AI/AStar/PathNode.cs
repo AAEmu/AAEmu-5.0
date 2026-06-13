@@ -1,251 +1,579 @@
 ﻿// https://lsreg.ru/realizaciya-algoritma-poiska-a-na-c/
 
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Numerics;
 
 using AAEmu.Game.Core.Managers;
-using AAEmu.Game.Utils;
+using AAEmu.Game.Models;
 
 namespace AAEmu.Game.Models.Game.AI.AStar;
 
 /// <summary>
-/// Reusable A* path finder.
+/// Status of the last <see cref="PathNode.FindPath"/> call.
+/// </summary>
+public enum PathStatus
+{
+    None,
+    Complete,
+    Partial,
+    Failed,
+    DirectFallback,
+}
+
+/// <summary>
+/// Reusable A* pathfinder.
 /// </summary>
 public class PathNode
 {
-    // Current zone.Id
     public uint ZoneKey { get; set; }
-
-    // The number of the current point on the map.
-    public uint Current { get; set; }
-    // Coordinates of the start point on the map (for the script).
-    public Point pos1 { get; set; }
-
-    // Coordinates of the end point on the map (for the script).
-    public Point pos2 { get; set; }
-
-    // List of found points (for the script).
-    public List<Point> findPath { get; set; }
-
-    // The coordinates of the point on the map. And the coordinates of the point on the map where the Npc goes.
-    public Point Position { get; set; }
-
-    // Path length from the start (G).
+    public Vector3 Position { get; set; }
     public float PathLengthFromStart { get; set; }
+    public PathNode? CameFrom { get; set; }
+    public float PathLengthToEnd { get; set; }
+    public float EstimateFullPathLength => PathLengthFromStart + PathLengthToEnd;
 
-    // The point from which it came to this point.
-    public PathNode CameFrom { get; set; }
+    public Vector3 StartPointPos { get; set; }
+    public Vector3 EndPointPos { get; set; }
+    public Queue<Vector3> FoundPath { get; set; } = new();
+    public Vector3 CurrentTargetPos { get; set; }
 
-    // Approximate distance to target (H).
-    public float HeuristicEstimatePathLength { get; set; }
-
-    // Expected total distance to target (F).
-    public float EstimateFullPathLength
-    {
-        get
-        {
-            return PathLengthFromStart + HeuristicEstimatePathLength;
-        }
-    }
+    // Diagnostics
+    public PathStatus LastStatus { get; set; } = PathStatus.None;
+    public Vector3 LastStartReal { get; set; } = Vector3.Zero;
+    public Vector3 LastEndReal { get; set; } = Vector3.Zero;
+    public Vector3 LastStartNodePos { get; set; } = Vector3.Zero;
+    public Vector3 LastEndNodePos { get; set; } = Vector3.Zero;
+    public int LastRawNodeCount { get; set; }
+    public float LastPathLength { get; set; }
+    public float LastOptimalDistance { get; set; }
+    public bool LastStartNodeSkipped { get; set; }
+    public string LastRepathReason { get; set; } = string.Empty;
+    public DateTime LastRepathTime { get; set; } = DateTime.MinValue;
+    public uint LastTargetObjId { get; set; }
+    public Vector3 LastTargetPosAtRepath { get; set; } = Vector3.Zero;
 
     /// <summary>
     /// Basic method of route calculation.
     /// </summary>
-    /// <param name="start"></param>
-    /// <param name="goal"></param>
-    /// <returns></returns>
-    public List<Point> FindPath(Point start, Point goal)
+    public List<Vector3> FindPath(AAEmu.Game.Models.Game.World.World world, Vector3 start, Vector3 goal)
     {
-        // Step 0
-        findPath = new List<Point>();
-        // Find the nearest point from the start point in the list of geodata points and start the search from it.
-        var (current, posStart) = AiGeoDataManager.Instance.FindСlosestToTheCurrent(ZoneKey, new Vector3(start.X, start.Y, start.Z));
-        start = posStart; // replace it with the nearest point from the geodata
-        var (_, posEnd) = AiGeoDataManager.Instance.FindСlosestToTheCurrent(ZoneKey, new Vector3(goal.X, goal.Y, goal.Z));
-        goal = posEnd; // replace it with the nearest point from the geodata
+        LastStartReal = start;
+        LastEndReal = goal;
+        LastStatus = PathStatus.Failed;
+        LastRawNodeCount = 0;
+        LastStartNodeSkipped = false;
 
-        // Step 1.
+        // Guard against null world, template, or geodata — prevents NPE when the
+        // world is still loading or the navmesh has not been initialised yet.
+        if (world?.Template?.GeoData == null)
+            return [];
+
+        var pathCfg = AppConfiguration.Instance.World?.Pathing;
+        var enabled = pathCfg?.Enabled ?? true;
+        var maxNode2D = pathCfg?.MaxStartEndNode2D ?? 0f;
+        var useCumulative = pathCfg?.UseCumulativeAStarCost ?? true;
+        var loopMul = pathCfg?.LoopBudgetDistanceMultiplier ?? 15;
+        var loopBase = pathCfg?.LoopBudgetBase ?? 100;
+        var useOptimized = pathCfg?.UseOptimizedAStar ?? true;
+
+        // Find the nearest .bai node to the start point
+        var posStart = enabled
+            ? world.Template.GeoData.FindClosestPathNode2D(ZoneKey, start, maxNode2D)
+            : null;
+
+        if (posStart.HasValue)
+        {
+            start = posStart.Value;
+            LastStartNodePos = posStart.Value;
+        }
+        else
+        {
+            LastStartNodePos = start;
+        }
+
+        var posEnd = enabled
+            ? world.Template.GeoData.FindClosestPathNode2D(ZoneKey, goal, maxNode2D)
+            : null;
+
+        if (posEnd.HasValue)
+        {
+            goal = posEnd.Value;
+            LastEndNodePos = posEnd.Value;
+        }
+        else
+        {
+            LastEndNodePos = goal;
+        }
+
+        EndPointPos = goal;
+        var rawDistance = Vector3.Distance(start, goal);
+
+        // Loop budget
+        var maxLoops = (int)MathF.Ceiling(rawDistance * loopMul) + loopBase;
+        const float goalReachedTolerance = 2.0f;
+
+        if (useOptimized)
+        {
+            return FindPathOptimized(world, start, goal, useCumulative, maxLoops, goalReachedTolerance);
+        }
+
+        // Legacy V4 loop — deliberately unoptimized (O(n log n) open-set scan via
+        // OrderBy) to maintain exact behavioural parity with the pre-v6 A* for A/B
+        // testing. The v6 optimized path uses a binary min-heap instead.
         var closedSet = new Collection<PathNode>();
         var openSet = new Collection<PathNode>();
 
-        // Step 2.
-        var startNode = new PathNode();
-        startNode.Current = current;
-        startNode.Position = start;
-        startNode.CameFrom = null;
-        startNode.PathLengthFromStart = 0;
-        startNode.HeuristicEstimatePathLength = GetHeuristicPathLength(start);
+        var startNode = new PathNode
+        {
+            Position = start,
+            CameFrom = null,
+            PathLengthFromStart = 0,
+            PathLengthToEnd = GetHeuristicPathLength(start, goal)
+        };
         openSet.Add(startNode);
+
+        var maxLoopsLeft = maxLoops;
 
         while (openSet.Count > 0)
         {
-            // Step 3.
+            maxLoopsLeft--;
+
             var currentNode = openSet.OrderBy(node => node.EstimateFullPathLength).First();
 
-            // Step 4.
-            if (currentNode.Position.Equals(goal))
+            var goalReached = Vector3.Distance(currentNode.Position, goal) <= goalReachedTolerance;
+            if (goalReached || maxLoopsLeft <= 0)
             {
                 var result = GetPathForNode(currentNode);
-                // оставим ближайшую точку взятую с geodata вместо точки откуда идем
-                //result[0] = pos1; // replace the first and the last point with the real one
-                //result[^1] = pos2;
-                // Добавим к найденным точкам координаты цели
-                result.Add(pos2);
-                result = AiGeoDataManager.DouglasPeuckerReduction(result, 2.0);
+
+                LastOptimalDistance = Vector3.Distance(start, goal);
+                var pathLen = 0f;
+                for (var i = 1; i < result.Count; i++)
+                    pathLen += Vector3.Distance(result[i - 1], result[i]);
+                LastPathLength = pathLen;
+
+                result.Add(EndPointPos);
+                var reducedQueue = AiGeoDataManager.Instance.ReducePath(result, 4);
+                result = reducedQueue.ToList();
                 Position = result[0];
-                Current = 0;
+                CurrentTargetPos = Vector3.Zero;
+
+                LastRawNodeCount = result.Count;
+                LastStatus = goalReached ? PathStatus.Complete : PathStatus.Partial;
                 return result;
             }
 
-            // Step 5.
             openSet.Remove(currentNode);
             closedSet.Add(currentNode);
 
-            // Step 6.
-            foreach (var neighbourNode in GetNeighbours(ZoneKey, currentNode, goal))
+            foreach (var neighbourNode in GetNeighbours(world, currentNode, useCumulative))
             {
-                // Step 7.
                 if (closedSet.Any(node => node.Position.Equals(neighbourNode.Position)))
-                {
                     continue;
-                }
 
                 var openNode = openSet.FirstOrDefault(node => node.Position.Equals(neighbourNode.Position));
-                // Step 8.
                 if (openNode == null)
                 {
                     openSet.Add(neighbourNode);
                 }
                 else if (openNode.PathLengthFromStart > neighbourNode.PathLengthFromStart)
                 {
-                    // Step 9.
                     openNode.CameFrom = currentNode;
                     openNode.PathLengthFromStart = neighbourNode.PathLengthFromStart;
+                    openNode.PathLengthToEnd = neighbourNode.PathLengthToEnd;
                 }
             }
         }
-        // Step 10.
-        return new List<Point>();
-        ;
+
+        LastStatus = PathStatus.Failed;
+        return [];
     }
 
     /// <summary>
-    /// G: Function for the distance from the starting point to the current point.
+    /// Optimized A* (v6) with binary heap.
     /// </summary>
-    /// <returns></returns>
-    private float GetDistanceFromStart(Point to)
+    private List<Vector3> FindPathOptimized(AAEmu.Game.Models.Game.World.World world, Vector3 start, Vector3 goal,
+        bool useCumulative, int maxLoops, float goalReachedTolerance)
     {
-        var _from = new Vector3(pos1.X, pos1.Y, pos1.Z);
-        var _to = new Vector3(to.X, to.Y, to.Z);
-        return MathUtil.CalculateDistance(_from, _to, false);
+        var heap = AStarScratchPool.RentHeap();
+        var bestG = AStarScratchPool.RentDictionary();
+        var cameFrom = AStarScratchPool.RentDictionaryVec();
+        var closed = AStarScratchPool.RentHashSet();
+        var seq = 0L;
+
+        var startH = GetHeuristicPathLength(start, goal);
+        bestG[start] = 0f;
+        heap.Push(new AStarEntry(start, 0f, startH, seq++));
+
+        var maxLoopsLeft = maxLoops;
+
+        while (heap.Count > 0)
+        {
+            var cur = heap.Pop();
+
+            if (closed.Contains(cur.Pos))
+                continue;
+            if (bestG.TryGetValue(cur.Pos, out var knownG) && cur.G > knownG + 1e-4f)
+                continue;
+
+            maxLoopsLeft--;
+
+            var goalReached = Vector3.Distance(cur.Pos, goal) <= goalReachedTolerance;
+            if (goalReached || maxLoopsLeft <= 0)
+            {
+                var result = ReconstructPath(cameFrom, cur.Pos, start);
+
+                LastOptimalDistance = Vector3.Distance(start, goal);
+                var pathLen = 0f;
+                for (var i = 1; i < result.Count; i++)
+                    pathLen += Vector3.Distance(result[i - 1], result[i]);
+                LastPathLength = pathLen;
+
+                result.Add(EndPointPos);
+                var reducedQueue = AiGeoDataManager.Instance.ReducePath(result, 4);
+                result = reducedQueue.ToList();
+                Position = result[0];
+                CurrentTargetPos = Vector3.Zero;
+
+                LastRawNodeCount = result.Count;
+                LastStatus = goalReached ? PathStatus.Complete : PathStatus.Partial;
+
+                // Return scratch collections to pool
+                AStarScratchPool.ReturnHeap(heap);
+                AStarScratchPool.ReturnDictionary(bestG);
+                AStarScratchPool.ReturnDictionaryVec(cameFrom);
+                AStarScratchPool.ReturnHashSet(closed);
+
+                return result;
+            }
+
+            closed.Add(cur.Pos);
+
+            var curNode = new PathNode
+            {
+                CurrentTargetPos = cur.Pos,
+                Position = cur.Pos,
+                EndPointPos = goal,
+                PathLengthFromStart = cur.G,
+                PathLengthToEnd = cur.H
+            };
+
+            foreach (var nb in GetNeighbours(world, curNode, useCumulative))
+            {
+                var nbPos = nb.Position;
+                if (closed.Contains(nbPos))
+                    continue;
+
+                var tentativeG = nb.PathLengthFromStart;
+                if (bestG.TryGetValue(nbPos, out var prevG) && tentativeG >= prevG - 1e-4f)
+                    continue;
+
+                bestG[nbPos] = tentativeG;
+                cameFrom[nbPos] = cur.Pos;
+                var hh = Vector3.Distance(nbPos, goal);
+                heap.Push(new AStarEntry(nbPos, tentativeG, hh, seq++));
+            }
+        }
+
+        LastStatus = PathStatus.Failed;
+
+        // Return scratch collections to pool
+        AStarScratchPool.ReturnHeap(heap);
+        AStarScratchPool.ReturnDictionary(bestG);
+        AStarScratchPool.ReturnDictionaryVec(cameFrom);
+        AStarScratchPool.ReturnHashSet(closed);
+
+        return [];
     }
 
-    /// <summary>
-    /// H: Estimates the distance to the target.
-    /// </summary>
-    /// <param name="from"></param>
-    /// <param name="to"></param>
-    /// <returns></returns>
-    private float GetHeuristicPathLength(Point from)
+    private static List<Vector3> ReconstructPath(Dictionary<Vector3, Vector3> cameFrom, Vector3 goal, Vector3 start)
     {
-        // point-to-point distance
-        var _from = new Vector3(from.X, from.Y, from.Z);
-        var _to = new Vector3(pos2.X, pos2.Y, pos2.Z);
-        return MathUtil.CalculateDistance(_from, _to, false);
+        var result = new List<Vector3> { goal };
+        var cur = goal;
+        var guard = 0;
+        while (!cur.Equals(start) && cameFrom.TryGetValue(cur, out var prev) && guard++ < 4096)
+        {
+            cur = prev;
+            result.Add(cur);
+        }
+        result.Reverse();
+        return result;
+    }
+
+    private static float GetHeuristicPathLength(Vector3 from, Vector3 to)
+    {
+        return Vector3.Distance(from, to);
     }
 
     /// <summary>
-    /// Obtaining a list of neighbors
+    /// Obtaining a list of neighbours (V6 pathfinding fix).
+    ///
+    /// Pathfinding fix (bidirectional graph — v4):
+    /// We now use AiGeoDataManager.GetNeighbourNodes instead of GetAvailablePoints.
+    /// The legacy GetAvailablePoints only returned outgoing edges, treating the
+    /// undirected .bai navmesh graph as if it were directed. This made A* unable to see
+    /// roughly half of the reachable neighbours and caused 86% of paths to time out as
+    /// 'Partial' on live servers. GetNeighbourNodes returns both outgoing
+    /// (SourceNode == this) and incoming (TargetNode == this) edges, so A* now sees the
+    /// full bidirectional graph as CryEngine intends.
+    ///
+    /// Pathfinding fix (G cost — v1):
+    /// The legacy code set PathLengthFromStart to (sourceNode - goal).Length(),
+    /// which is not a cumulative G cost. The corrected formula is
+    /// parent.PathLengthFromStart + step, where step is the distance from the parent
+    /// node to this neighbour.
+    ///
+    /// v6: when UseEdgeLengthCost is enabled, the per-edge step cost uses the
+    /// link length from GetNeighbourNodes instead of the straight-line distance.
     /// </summary>
-    /// <param name="zoneKey"></param>
-    /// <param name="pathNode"></param>
-    /// <param name="goal"></param>
-    /// <returns></returns>
-    private Collection<PathNode> GetNeighbours(uint zoneKey, PathNode pathNode, Point goal)
+    private Collection<PathNode> GetNeighbours(AAEmu.Game.Models.Game.World.World world, PathNode pathNode, bool useCumulativeCost)
     {
         var result = new Collection<PathNode>();
 
-        // The adjacent points are the points where you can go.
-        var neighbourPoints = AiGeoDataManager.Instance.GetAvailablePoints(zoneKey, pathNode.Current);
+        if (world?.Template?.GeoData == null)
+            return result;
 
-        foreach (var point in neighbourPoints)
+        var geoData = world.Template.GeoData;
+        var pathCfg = AppConfiguration.Instance.World?.Pathing;
+        var useEdgeLen = pathCfg?.UseEdgeLengthCost ?? true;
+
+        // Get bidirectional neighbours using position-based lookup
+        var neighbours = AiGeoDataManager.Instance.GetNeighbourNodesByPosition(ZoneKey, pathNode.Position);
+
+        foreach (var (linkLength, neighbourPos) in neighbours)
         {
-            // Fill in the data for the waypoint.
-            var neighbourNode = new PathNode();
-            neighbourNode.Current = point.EndPoint;
-            neighbourNode.Position = point.Position;
-            neighbourNode.CameFrom = pathNode;
-            neighbourNode.PathLengthFromStart = GetDistanceFromStart(point.Position);
-            neighbourNode.HeuristicEstimatePathLength = GetHeuristicPathLength(point.Position);
-
-            // Hybrid runtime validation: navmesh links must also respect forbidden areas and
-            // static-only blockers that are not represented in the navigation database.
-            if (AiGeoDataManager.Instance.CheckImpossibleWalk(zoneKey, neighbourNode.Position) ||
-                AiGeoDataManager.Instance.IsSegmentBlocked(
-                    new System.Numerics.Vector3(pathNode.Position.X, pathNode.Position.Y, pathNode.Position.Z),
-                    new System.Numerics.Vector3(neighbourNode.Position.X, neighbourNode.Position.Y, neighbourNode.Position.Z)))
-            {
+            // Check if the neighbour position is in a forbidden area
+            if (geoData.CheckImpossibleWalk(neighbourPos))
                 continue;
+
+            // Calculate G cost (cumulative from start)
+            float gCost;
+            if (useCumulativeCost)
+            {
+                // v6: prefer the true on-mesh edge length when available
+                float stepCost;
+                if (useEdgeLen && linkLength > 0.01f)
+                    stepCost = linkLength;
+                else
+                    stepCost = Vector3.Distance(pathNode.Position, neighbourPos);
+                gCost = pathNode.PathLengthFromStart + stepCost;
+            }
+            else
+            {
+                // Legacy formula (kept for A/B testing only)
+                gCost = Vector3.Distance(neighbourPos, pathNode.EndPointPos);
             }
 
+            // H cost (heuristic to goal)
+            var hCost = Vector3.Distance(neighbourPos, pathNode.EndPointPos);
+
+            var neighbourNode = new PathNode
+            {
+                Position = neighbourPos,
+                EndPointPos = pathNode.EndPointPos,
+                CameFrom = pathNode,
+                PathLengthFromStart = gCost,
+                PathLengthToEnd = hCost
+            };
+
             result.Add(neighbourNode);
-            //ViewPoint(point.Position, 681u); // let's show the point for debugging purposes
         }
 
         return result;
     }
 
-    /// <summary>
-    /// let's show the point for debugging purposes
-    /// </summary>
-    /// <param name="point"></param>
-    /// <param name="templateId"></param>
-    /* Unused
-    private static void ViewPoint(Point point, uint templateId)
+    private static List<Vector3> GetPathForNode(PathNode pathNode)
     {
-        // 681 Pebble, 858	Contaminated Pebble, 5014 Combat Flag
-        var unitTemplateId = templateId;
-
-        var characters = WorldManager.Instance.GetAllCharacters();
-        if (characters == null)
-        {
-            return;
-        }
-        var charPos = characters[0].Transform.CloneDetached();
-        var doodadSpawner = new DoodadSpawner { Id = 0, UnitId = unitTemplateId };
-
-        doodadSpawner.Position = charPos.CloneAsSpawnPosition();
-
-        doodadSpawner.Position.X = point.X;
-        doodadSpawner.Position.Y = point.Y;
-        doodadSpawner.Position.Z = point.Z;
-        ;
-        doodadSpawner.Position.Yaw = 0;
-        doodadSpawner.Position.Pitch = 0;
-        doodadSpawner.Position.Roll = 0;
-
-        doodadSpawner.Spawn(0, 0, characters[0].ObjId);
-    }*/
-
-    /// <summary>
-    /// Obtaining a route. The route is represented as a list of point coordinates.
-    /// </summary>
-    /// <param name="pathNode"></param>
-    /// <returns></returns>
-    private static List<Point> GetPathForNode(PathNode pathNode)
-    {
-        var result = new List<Point>();
+        var result = new List<Vector3>();
         var currentNode = pathNode;
         while (currentNode != null)
         {
             result.Add(currentNode.Position);
-            //ViewPoint(currentNode.Position, 5014u); // let's show the point for debugging purposes
             currentNode = currentNode.CameFrom;
         }
         result.Reverse();
-
         return result;
+    }
+}
+
+/// <summary>
+/// A single open-set entry for the v6 optimized A*.
+/// </summary>
+public readonly struct AStarEntry
+{
+    public readonly Vector3 Pos;
+    public readonly float G;
+    public readonly float H;
+    public readonly float F;
+    public readonly long Seq;
+
+    public AStarEntry(Vector3 pos, float g, float h, long seq)
+    {
+        Pos = pos;
+        G = g;
+        H = h;
+        F = g + h;
+        Seq = seq;
+    }
+
+    public int CompareTo(in AStarEntry other)
+    {
+        var c = F.CompareTo(other.F);
+        if (c != 0) return c;
+        c = H.CompareTo(other.H);
+        if (c != 0) return c;
+        return Seq.CompareTo(other.Seq);
+    }
+}
+
+/// <summary>
+/// Minimal array-backed binary min-heap for A*.
+/// </summary>
+public sealed class AStarHeap
+{
+    private AStarEntry[] _items = new AStarEntry[64];
+    public int Count { get; private set; }
+
+    public void Clear()
+    {
+        Count = 0;
+    }
+
+    public void Push(in AStarEntry e)
+    {
+        if (Count == _items.Length)
+            Array.Resize(ref _items, _items.Length * 2);
+        _items[Count] = e;
+        SiftUp(Count);
+        Count++;
+    }
+
+    public AStarEntry Pop()
+    {
+        var root = _items[0];
+        Count--;
+        if (Count > 0)
+        {
+            _items[0] = _items[Count];
+            SiftDown(0);
+        }
+        _items[Count] = default;
+        return root;
+    }
+
+    private void SiftUp(int i)
+    {
+        while (i > 0)
+        {
+            var parent = (i - 1) >> 1;
+            if (_items[i].CompareTo(_items[parent]) >= 0)
+                break;
+            (_items[i], _items[parent]) = (_items[parent], _items[i]);
+            i = parent;
+        }
+    }
+
+    private void SiftDown(int i)
+    {
+        while (true)
+        {
+            var left = (i << 1) + 1;
+            var right = left + 1;
+            var smallest = i;
+            if (left < Count && _items[left].CompareTo(_items[smallest]) < 0)
+                smallest = left;
+            if (right < Count && _items[right].CompareTo(_items[smallest]) < 0)
+                smallest = right;
+            if (smallest == i)
+                break;
+            (_items[i], _items[smallest]) = (_items[smallest], _items[i]);
+            i = smallest;
+        }
+    }
+}
+
+/// <summary>
+/// Lightweight object pool for A* scratch collections.
+/// Reduces GC pressure from per-call dictionary/hashset allocations in FindPathOptimized.
+///
+/// Thread-affinity requirement:
+/// Uses [ThreadStatic] to avoid synchronization overhead — each thread gets its own pool.
+/// The Rent/Return calls MUST happen on the same thread. This is currently guaranteed because
+/// FindPath/FindPathOptimized are synchronous and called from the main game tick thread.
+/// If you ever move FindPath to a Task.Run or thread-pool callback, either:
+///   (a) disable this pool (replace Rent with 'new' and Return with no-op), or
+///   (b) switch to a ConcurrentBag-based pool with proper synchronization.
+/// </summary>
+internal static class AStarScratchPool
+{
+    [ThreadStatic]
+    private static Dictionary<Vector3, float>? _dictBestG;
+    [ThreadStatic]
+    private static Dictionary<Vector3, Vector3>? _dictCameFrom;
+    [ThreadStatic]
+    private static HashSet<Vector3>? _hashClosed;
+
+    public static Dictionary<Vector3, float> RentDictionary()
+    {
+        var d = _dictBestG;
+        _dictBestG = null;
+        if (d == null)
+            return new Dictionary<Vector3, float>(128);
+        d.Clear();
+        return d;
+    }
+
+    public static void ReturnDictionary(Dictionary<Vector3, float> d)
+    {
+        _dictBestG = d;
+    }
+
+    public static Dictionary<Vector3, Vector3> RentDictionaryVec()
+    {
+        var d = _dictCameFrom;
+        _dictCameFrom = null;
+        if (d == null)
+            return new Dictionary<Vector3, Vector3>(128);
+        d.Clear();
+        return d;
+    }
+
+    public static void ReturnDictionaryVec(Dictionary<Vector3, Vector3> d)
+    {
+        _dictCameFrom = d;
+    }
+
+    public static HashSet<Vector3> RentHashSet()
+    {
+        var h = _hashClosed;
+        _hashClosed = null;
+        if (h == null)
+            return new HashSet<Vector3>(128);
+        h.Clear();
+        return h;
+    }
+
+    public static void ReturnHashSet(HashSet<Vector3> h)
+    {
+        _hashClosed = h;
+    }
+
+    [ThreadStatic]
+    private static AStarHeap? _heap;
+
+    public static AStarHeap RentHeap()
+    {
+        var h = _heap;
+        _heap = null;
+        if (h == null)
+            return new AStarHeap();
+        h.Clear();
+        return h;
+    }
+
+    public static void ReturnHeap(AStarHeap h)
+    {
+        _heap = h;
     }
 }

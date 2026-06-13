@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Drawing;
 
+using System.Numerics;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.NPChar;
@@ -29,17 +30,20 @@ public class AStarPathFindingSubCommand : SubCommandBase
         }
 
         //if (PathNode.pos1.X > 0 && PathNode.pos1.Y > 0 && PathNode.pos2.X > 0 && PathNode.pos2.Y > 0)
-        if (npc.Ai.PathNode.pos1 != null && npc.Ai.PathNode.pos2 != null)
+        if (npc.Ai.PathNode.StartPointPos != Vector3.Zero && npc.Ai.PathNode.EndPointPos != Vector3.Zero)
         {
             npc.Ai.PathNode.ZoneKey = character.Transform.ZoneId;
-            npc.Ai.PathNode.findPath = npc.Ai.PathNode.FindPath(npc.Ai.PathNode.pos1, npc.Ai.PathNode.pos2);
+            var path = npc.Ai.PathNode.FindPath(npc.Ai.Owner.ParentWorld, npc.Ai.PathNode.StartPointPos, npc.Ai.PathNode.EndPointPos);
+            npc.Ai.PathNode.FoundPath = new Queue<Vector3>(path);
 
-            character.SendDebugMessage($"AStar: points found Total: {npc.Ai.PathNode.findPath?.Count ?? 0}");
-            if (npc.Ai.PathNode.findPath != null)
+            character.SendDebugMessage($"AStar: points found Total: {npc.Ai.PathNode.FoundPath?.Count ?? 0}");
+            if (npc.Ai.PathNode.FoundPath != null)
             {
-                for (var i = 0; i < npc.Ai.PathNode.findPath.Count; i++)
+                var i = 0;
+                foreach (var point in npc.Ai.PathNode.FoundPath)
                 {
-                    character.SendDebugMessage($"AStar: point {i} coordinates X:{npc.Ai.PathNode.findPath[i].X}, Y:{npc.Ai.PathNode.findPath[i].Y}, Z:{npc.Ai.PathNode.findPath[i].Z}");
+                    character.SendDebugMessage($"AStar: point {i} coordinates X:{point.X}, Y:{point.Y}, Z:{point.Z}");
+                    i++;
                 }
             }
         }
