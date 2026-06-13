@@ -1,5 +1,31 @@
 # CHANGELOG - AAEmu 5.0.7.0 Private Server
 
+## [5.0.7.0 private] - 13.06.2026
+
+### Features / Новые функции
+
+**add(geo): Применить патч 6_AAEmu_pathfinding_V6_1_FULL by Guyldorum**
+
+На русском:
+- Применён патч 6_AAEmu_pathfinding_V6_1_FULL от Guyldorum
+- Значительное расширение геодаты и pathfinding: `AiGeodataManager`, `PathNode`, `BaseCombatBehavior`
+- Новые команды: `/heightmob`, расширения `/pathmob` и `/astar`
+- Новые конфигурации: `Configurations.cs`, `World.json`
+- Добавлена диагностика спавна: `SpawnHeightDiagnostics.cs`, `TrackAndStoreCoordinates.cs`
+- Добавлен анализ архитектуры: `Docs/analysis/00-architecture-review.md`
+
+English:
+- Applied patch 6_AAEmu_pathfinding_V6_1_FULL by Guyldorum
+- Significant geodata and pathfinding expansion: `AiGeodataManager`, `PathNode`, `BaseCombatBehavior`
+- New commands: `/heightmob`, extended `/pathmob` and `/astar`
+- New configurations: `Configurations.cs`, `World.json`
+- Added spawn diagnostics: `SpawnHeightDiagnostics.cs`, `TrackAndStoreCoordinates.cs`
+- Added architecture review: `Docs/analysis/00-architecture-review.md`
+
+Files changed: `AAEmu.Game/Configurations/World.json`, `AAEmu.Game/Core/Managers/AiGeodataManager.cs`, `AAEmu.Game/Core/Managers/SpawnHeightDiagnostics.cs`, `AAEmu.Game/Models/Game/AI/AStar/PathNode.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/BaseCombatBehavior.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/Flytrap/FlytrapAttackBehavior.cs`, `AAEmu.Game/Models/Game/Configurations.cs`, `AAEmu.Game/Models/Game/NPChar/Npc.cs`, `AAEmu.Game/Models/Game/NPChar/NpcSpawnerNpc.cs`, `AAEmu.Game/Models/Game/NPChar/TrackAndStoreCoordinates.cs`, `AAEmu.Game/Scripts/Commands/Height.cs`, `AAEmu.Game/Scripts/Commands/HeightMob.cs`, `AAEmu.Game/Scripts/Commands/PathMob.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarEndPositionSubCommand.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarPathFindingSubCommand.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarStartPositionSubCommand.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarViewSubCommand.cs`, `Docs/analysis/00-architecture-review.md`
+
+---
+
 ## [5.0.7.0 private] - 03.06.2026 (6)
 
 ### Bug Fixes / Исправления
@@ -489,23 +515,39 @@ English:
 
 ## Информация / Information
 
-**Версия сервера / Server version:** 5.0.7.0 private  
-**Последнее обновление / Last updated:** 31.05.2026  
+**Версия сервера / Server version:** 5.0.7.0 private
+**Последнее обновление / Last updated:** 13.06.2026
 **Ветка / Branch:** client_version/5.0_client_(2018-12-25)
 
 ---
 
 ## Commit History / История коммитов
 
+### 2026-06-13
+
+- **81aee6e20** - add(geo): Применить патч 6_AAEmu_pathfinding_V6_1_FULL by Guyldorum
+
+### 2026-06-10
+
+- **549f6e960** - fix(npc-movement): защитить Z-координату НПС при движении на поднятых площадках
+
 ### 2026-06-03
 
-- **fix(npc-movement): защитить Z-координату НПС при движении на поднятых площадках** — защита высоты НПС от сброса на рельеф при якере не Terrain
-- **fix(geodata): исправить вычисление высоты рельефа при спавне НПС и в геоданных** — использовать глобальную heightmap вместо per-cell
-- **fix(geodata): создавать WorldTemplate и WorldCell при загрузке мира** — инициализация WorldTemplate после создания World
+- **0a6030019** - fix(geodata): загружать statobjs.dat для правильного пути к CGF-моделям brush-объектов
+- **75cb66fca** - feat(geodata): загрузка реальной CGF-сетки через CgfConverter для точного raycast полов
+- **6c348e4c3** - fix(roaming): использовать улучшенный MoveTowards при роуминге NPC
+- **59a486160** - fix(geodata): передавать текущую Z в GetHeight при корректировке высоты NPC
+- **c7dd6718a** - feat(geodata): добавить статическую клиентскую геодату
+- **bfb9d702e** - test(appellation): покрыть SCAppellationChangedPacket и CharacterAppellations.Change тестами
+- **1aa349e50** - fix(appellation): передавать buffId звания в пакет SCAppellationChanged by BwonSamdi
+
+### 2026-06-02
+
+- **e41f21200** - fix(physics): исправить видимый «прыжок» вниз сразу после появления кораблей by Master-Veles
 
 ### 2026-05-31
 
-- **b919a2392** - fix(ship-breathing): не проверять дыхание персонажа на палубе корабля
+- **f23e99d8f** - fix(ship-breathing): не проверять дыхание персонажа на палубе корабля
 - **8fa9a82fb** - docs: обновить CHANGELOG коммитами от 31.05.2026
 - **c8e659f7d** - refactor(skills): устранить замечания код-ревью позиционных скиллов
 - **2db63c9f4** - fix(skills): улучшить обработку позиционных скиллов на кораблях
@@ -533,7 +575,7 @@ English:
 - **4dda2581c** - Add SCPlaySequencePacket and play heir level up sequence
 - **e24fae73f** - fix: исправить DoodadFuncRatioChange, DoodadFuncRatioRespawn
 - **701dd7137** - Fix housing doodad restart placeholders
-- **c6a9cefe0** - fix: исправление вращения домов и переorganization тестов
+- **c6a9cefe0** - fix: исправление вращения домов и реорганизация тестов
 
 ### 2026-04-19
 
