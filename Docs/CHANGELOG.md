@@ -38,7 +38,24 @@ Source: `https://github.com/devincean-gif/archeage-v5.0-patches`
 
 ## [Unreleased]
 
+## [5.0.7.0 private] - 14.06.2026
+
 ### Bug Fixes / Исправления
+
+**fix(appellation): исправить применение баффа при смене звания — сделать buff_id серверно-авторитетным**
+
+- `addBuff` получал ID титула, но вызывался с сырым ID баффа из клиентского пакета — `GetAppellationsTemplate(buffId)` всегда возвращал `null`, бафф никогда не применялся
+- `Change()` и `Load()` теперь определяют `BuffId` из серверного шаблона `AppellationTemplate.BuffId`, а не из клиентских данных
+- Добавлено предупреждение при несовпадении клиентского `buff_id` с серверным значением для защиты от подмены
+- `addBuff` рефакторен: теперь принимает сырой ID баффа напрямую, без поиска по шаблону
+- Добавлена SQL-миграция: колонка `buff_id` в таблице `appellations`
+- Обновлены юнит-тесты: используется Moq для проверки вызова `AddBuff` с корректным ID
+
+Files changed: `AAEmu.Game/Models/Game/Char/CharacterAppellations.cs`, `AAEmu.Game/SQL/updates/2026-06-14_aaemu_game_appellations_add_buff_id.sql`, `AAEmu.UnitTests/Game/Models/Game/Char/CharacterAppellationsTests.cs`
+
+Docs added: `Docs/appellation-buff-id-server-authoritative-2026-06-14.md`
+
+---
 
 **fix(ai-behavior): добавить проверку CC-эффектов в PickSkillAndUseIt, убрать dead code**
 
@@ -621,6 +638,7 @@ English:
 - **fe778e7a0** - test(pathfinding): добавить юнит-тесты для SpawnHeightDiagnostics, Building, Configs, AStarHeap, PathNode diagnostics
 - **review(ai-behavior)** - refactor(ai-behavior): заменить хардкод MeleeAttackRange на Ai.Param, исправить SetWeaponRange (атакующий вместо цели), добавить safety clamp для melee без оружия, 100 юнит-тестов
 - **fix(ai-behavior)** - fix(ai-behavior): добавить проверку CC-эффектов (Knockdown/Sleep/Stun) в PickSkillAndUseIt, убрать dead code (_isCrowdControlBlocked, UpdateCrowdControlState), добавить null-safe проверку IsDead
+- **fix(appellation)** - fix(appellation): сделать buff_id серверно-авторитетным при смене звания, добавить SQL-миграцию, обновить юнит-тесты
 
 ### 2026-06-13
 

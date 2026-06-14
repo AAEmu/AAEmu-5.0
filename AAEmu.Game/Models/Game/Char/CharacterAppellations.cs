@@ -1,6 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Packets.G2C;
-using AAEmu.Game.Core.Managers.UnitManagers;
 using MySql.Data.MySqlClient;
 using NLog;
 
@@ -12,6 +11,7 @@ public class CharacterAppellations
 
     public List<uint> Appellations { get; set; }
     public uint ActiveAppellation { get; set; }
+    public uint ActiveAppellationBuffId { get; set; }
 
     public Character Owner { get; set; }
 
@@ -20,6 +20,7 @@ public class CharacterAppellations
         Owner = owner;
         Appellations = new List<uint>();
         ActiveAppellation = 0;
+        ActiveAppellationBuffId = 0;
     }
 
     private void addBuff(uint titleId)
@@ -27,11 +28,12 @@ public class CharacterAppellations
         var buffId = CharacterManager.Instance.GetAppellationsTemplate(titleId)?.BuffId ?? 0;
         if (buffId != 0) Owner.Buffs.AddBuff(buffId, Owner);
 
-        Logger.Info($"title: {titleId} giving buff {buffId}");
+        Logger.Info($"giving buff {buffId}");
     }
+
     private void removeCurrentBuff()
     {
-        if (ActiveAppellation != 0) //i.e. you have no title to begin with, so this is skipped
+        if (ActiveAppellation != 0) // i.e. you have no title to begin with, so this is skipped
         {
             var buffId = CharacterManager.Instance.GetAppellationsTemplate(ActiveAppellation)?.BuffId ?? 0;
             if (buffId != 0) Owner.Buffs.RemoveBuff(buffId); //i.e. checking if title actually has a buff
@@ -53,28 +55,31 @@ public class CharacterAppellations
         Owner.SendPacket(new SCAppellationGainedPacket(id));
     }
 
-    public void Change(uint id)
+    internal void Change(uint appellationId, uint appellationBuffId)
     {
-        if (id == 0)
+        if (appellationId == 0)
         {
             removeCurrentBuff();
             ActiveAppellation = 0;
+            ActiveAppellationBuffId = 0;
         }
         else
         {
-            if (Appellations.Contains(id))
+            if (Appellations.Contains(appellationId))
             {
                 removeCurrentBuff();
-                ActiveAppellation = id;
-                addBuff(id);
+                ActiveAppellation = appellationId;
+                ActiveAppellationBuffId = appellationBuffId;
+                addBuff(appellationBuffId);
+
+                Logger.Warn("Client provided buff {0} for appellation {1}, owner {2}", appellationBuffId, appellationId, Owner.Id);
             }
             else
             {
-                Logger.Warn("Id {0} doesn't exist, owner {1}", id, Owner.Id);
+                Logger.Warn("Id {0}, buff {1} doesn't exist, owner {2}", appellationId, appellationBuffId, Owner.Id);
             }
         }
-        var buffId = CharacterManager.Instance.GetAppellationsTemplate(ActiveAppellation)?.BuffId ?? 0;
-        Owner.BroadcastPacket(new SCAppellationChangedPacket(Owner.ObjId, ActiveAppellation, buffId), true);
+        Owner.BroadcastPacket(new SCAppellationChangedPacket(Owner.ObjId, ActiveAppellation, ActiveAppellationBuffId), true);
     }
 
     public void Send()
@@ -94,7 +99,7 @@ public class CharacterAppellations
     {
         using (var command = connection.CreateCommand())
         {
-            command.CommandText = "SELECT id, active FROM appellations WHERE `owner` = @owner";
+            command.CommandText = "SELECT id, active, buff_id FROM appellations WHERE `owner` = @owner";
             command.Parameters.AddWithValue("@owner", Owner.Id);
             using (var reader = command.ExecuteReader())
             {
@@ -102,12 +107,14 @@ public class CharacterAppellations
                 {
                     var id = reader.GetUInt32("id");
                     var active = reader.GetBoolean("active");
+                    var activeBuffId = reader.GetUInt32("buff_id");
 
                     Appellations.Add(id);
                     if (active)
                     {
                         ActiveAppellation = id;
-                        addBuff(id);
+                        ActiveAppellationBuffId = activeBuffId;
+                        addBuff(activeBuffId);
                     }
                 }
             }
@@ -123,10 +130,11 @@ public class CharacterAppellations
                 command.Connection = connection;
                 command.Transaction = transaction;
 
-                command.CommandText = "REPLACE INTO appellations(`id`,`active`,`owner`) VALUES (@id, @active, @owner)";
+                command.CommandText = "REPLACE INTO appellations(`id`,`active`,`owner`,`buff_id`) VALUES (@id, @active, @owner, @buff_id)";
                 command.Parameters.AddWithValue("@id", appellation);
                 command.Parameters.AddWithValue("@active", ActiveAppellation == appellation);
                 command.Parameters.AddWithValue("@owner", Owner.Id);
+                command.Parameters.AddWithValue("@buff_id", ActiveAppellationBuffId);
                 command.ExecuteNonQuery();
             }
         }

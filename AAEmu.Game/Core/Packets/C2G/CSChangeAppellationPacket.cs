@@ -11,8 +11,9 @@ public class CSChangeAppellationPacket : GamePacket
 
     public override void Read(PacketStream stream)
     {
-        var id = stream.ReadUInt32();
+        var appellationId = stream.ReadUInt32();
+        var appellationBuffId = stream.ReadUInt32();
 
-        Connection.ActiveChar.Appellations.Change(id);
+        Connection.ActiveChar.Appellations.Change(appellationId, appellationBuffId);
     }
 }

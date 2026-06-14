@@ -1,0 +1,1 @@
+ALTER TABLE `appellations` ADD COLUMN `buff_id` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `owner`;

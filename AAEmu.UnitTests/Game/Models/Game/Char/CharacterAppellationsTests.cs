@@ -1,9 +1,7 @@
-using System.Collections.Generic;
-using System.Reflection;
+﻿using System.Reflection;
 using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Network.Game;
-using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Char.Templates;
 using AAEmu.Game.Models.Game.Units;
@@ -52,15 +50,17 @@ public class CharacterAppellationsTests
         const uint expectedBuffId = 777u;
         SeedAppellationTemplate(titleId, expectedBuffId);
 
+        var buffsMock = new Mock<IBuffs>();
         var owner = new CapturingCharacterMock();
-        owner.Buffs = new Mock<IBuffs>().Object;
+        owner.Buffs = buffsMock.Object;
         var appellations = new CharacterAppellations(owner);
         appellations.Appellations.Add(titleId);
 
-        appellations.Change(titleId);
+        appellations.Change(titleId, 0);
 
         Assert.NotNull(owner.LastBroadcastedPacket);
         Assert.Equal(expectedBuffId, ReadBuffIdFromPacket(owner.LastBroadcastedPacket));
+        buffsMock.Verify(b => b.AddBuff(expectedBuffId, owner), Times.Once);
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class CharacterAppellationsTests
         owner.Buffs = new Mock<IBuffs>().Object;
         var appellations = new CharacterAppellations(owner);
 
-        appellations.Change(0);
+        appellations.Change(0, 0);
 
         Assert.NotNull(owner.LastBroadcastedPacket);
         Assert.Equal(0u, ReadBuffIdFromPacket(owner.LastBroadcastedPacket));
@@ -85,7 +85,7 @@ public class CharacterAppellationsTests
         var appellations = new CharacterAppellations(owner);
         // unknownId is NOT added to Appellations — should be ignored
 
-        appellations.Change(unknownId);
+        appellations.Change(unknownId, 0);
 
         Assert.NotNull(owner.LastBroadcastedPacket);
         var stream = new PacketStream();

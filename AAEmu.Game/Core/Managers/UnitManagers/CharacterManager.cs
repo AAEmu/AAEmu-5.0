@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using AAEmu.Commons.Exceptions;
+﻿using AAEmu.Commons.Exceptions;
 using AAEmu.Commons.IO;
 using AAEmu.Commons.Models;
 using AAEmu.Commons.Utils;
@@ -62,9 +58,7 @@ public class CharacterManager : Singleton<CharacterManager>
 
     public AppellationTemplate GetAppellationsTemplate(uint id)
     {
-        if (_appellations.TryGetValue(id, out var template))
-            return template;
-        return null;
+        return _appellations.GetValueOrDefault(id);
     }
 
     public List<Expand> GetExpands(int step)
@@ -79,16 +73,12 @@ public class CharacterManager : Singleton<CharacterManager>
 
     public ExpertLimit GetExpertLimit(int step)
     {
-        if (_expertLimits.TryGetValue(step, out var limit))
-            return limit;
-        return null;
+        return _expertLimits.GetValueOrDefault(step);
     }
 
     public ExpandExpertLimit GetExpandExpertLimit(int step)
     {
-        if (_expandExpertLimits.TryGetValue(step, out var limit))
-            return limit;
-        return null;
+        return _expandExpertLimits.GetValueOrDefault(step);
     }
 
     public void Load()
