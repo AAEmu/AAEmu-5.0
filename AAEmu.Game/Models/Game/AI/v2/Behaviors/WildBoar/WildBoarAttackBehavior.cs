@@ -1,7 +1,4 @@
-﻿using System;
-using System.Linq;
-
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.AI.v2.Params.WildBoar;
 using AAEmu.Game.Models.Game.Models;
@@ -172,7 +169,7 @@ public class WildBoarAttackBehavior : BaseCombatBehavior
                 continue;
 
             // Try to use spurt skill
-            SetWeaponRange(skill, Ai.Owner.CurrentTarget);
+            SetWeaponRange(skill);
             var result = UseSkill(skill, Ai.Owner.CurrentTarget);
 
             // Fall back to default combat skill if on cooldown

@@ -1,7 +1,3 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
@@ -29,7 +25,13 @@ public abstract class Behavior
     protected float _nextTimeToDelay;
     protected float _minWeaponRange;
     protected float _maxWeaponRange;
-    private const float MeleeAttackRange = 4f;
+
+    /// <summary>
+    /// Multiplier for flying NPC vertical height gap detection.
+    /// Not related to melee attack range — kept separate so that tuning MeleeAttackRange
+    /// does not unintentionally affect vertical detection.
+    /// </summary>
+    private const float FlyingHeightGapMultiplier = 3.5f;
 
     /// <summary>
     /// The AI context for this behavior (contains owner, parameters, etc).
@@ -125,15 +127,16 @@ public abstract class Behavior
             pickedSkillId = skills[Rand.Next(skills.Count)].SkillId;
         }
 
-        // Hackfix for melee attack range
-        if (pickedSkillId == 2 && targetDist > MeleeAttackRange)
+        // Use configured melee attack range from AI params instead of hardcoded 4f
+        var meleeRange = Ai.Param?.MeleeAttackRange ?? 4f;
+        if (pickedSkillId == 2 && targetDist > meleeRange)
         {
             return SkillResult.TooFarRange;
         }
         var skillTemplate = SkillManager.Instance.GetSkillTemplate(pickedSkillId);
         var skill = new Skill(skillTemplate);
 
-        SetWeaponRange(skill, target); // Set max attack distance for the skill
+        SetWeaponRange(skill); // Set max attack distance for the skill
 
         var delay2 = (int)(Ai.Owner.Template.BaseSkillDelay * 1000);
         if (Ai.Owner.Template.BaseSkillDelay == 0)
@@ -321,7 +324,7 @@ public abstract class Behavior
             if (unit.IsDead || unit.Hp <= 0)
                 continue;
 
-            var maxHeightGap = Ai.Owner.CanFly ? (Ai.Owner.ModelSize * Ai.Owner.Scale * MeleeAttackRange) : (Ai.Owner.ModelSize * Ai.Owner.Scale * 1.75f);
+            var maxHeightGap = Ai.Owner.CanFly ? (Ai.Owner.ModelSize * Ai.Owner.Scale * FlyingHeightGapMultiplier) : (Ai.Owner.ModelSize * Ai.Owner.Scale * 1.75f);
             if (MathUtil.IsFront(Ai.Owner, unit, Ai.Owner.Template.SightFovScale) &&
                 Math.Abs(Ai.Owner.Transform.World.Position.Z - unit.Transform.World.Position.Z) < maxHeightGap)
             {
@@ -399,11 +402,11 @@ public abstract class Behavior
     }
 
     /// <summary>
-    /// Sets the weapon range for a skill based on the target's equipment.
+    /// Sets the weapon range for a skill based on the attacker's (Ai.Owner) equipment.
     /// </summary>
-    public void SetWeaponRange(Skill skill, BaseUnit target)
+    public void SetWeaponRange(Skill skill)
     {
-        var unit = (Unit)target;
+        var unit = (Unit)Ai.Owner; // attacker, not target
         var skillRange = Ai.Owner.ApplySkillModifiers(skill, SkillAttribute.Range, skill.Template.MaxRange);
         var minRangeCheck = skill.Template.MinRange * 1.0;
         var maxRangeCheck = skillRange;

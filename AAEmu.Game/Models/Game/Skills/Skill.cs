@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-using System.Threading.Tasks;
+﻿using System.Numerics;
 
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
@@ -715,7 +711,7 @@ public class Skill
         unit.SkillTask = null;
 
         ConsumeMana(caster);
-        
+
         // Для базовых навыков ближнего боя (ID=2,3,4) устанавливаем минимальный кулдаун 1000ms
         // Это предотвращает слишком частое использование ближней атаки
         var cooldownTime = Template.CooldownTime;
@@ -724,7 +720,7 @@ public class Skill
             cooldownTime = 1000;
             Logger.Trace("Skill.Cast adjusted cooldown for melee skill {0} to {1}ms", Template?.Id, cooldownTime);
         }
-        
+
         unit.Cooldowns.AddCooldown(Template.Id, (uint)cooldownTime);
 
         // if (Id == 2 || Id == 3 || Id == 4)
@@ -986,21 +982,21 @@ public class Skill
             possibleTargets.Add(targetSelf);
         }
         else
-        if (Template.TargetAreaRadius > 0)
-        {
-            var units = WorldManager.GetAround<BaseUnit>(targetSelf, Template.TargetAreaRadius, true);
-            if (Template.TargetSelection == SkillTargetSelection.Source)
-                units.Add(targetSelf); // Add main target as well
-            units = FilterAoeUnits(caster, units).ToList();
+            if (Template.TargetAreaRadius > 0)
+            {
+                var units = WorldManager.GetAround<BaseUnit>(targetSelf, Template.TargetAreaRadius, true);
+                if (Template.TargetSelection == SkillTargetSelection.Source)
+                    units.Add(targetSelf); // Add main target as well
+                units = FilterAoeUnits(caster, units).ToList();
 
-            possibleTargets.AddRange(units);
-            // TODO : Need to check if this is needed
-            //if (targetSelf is Unit) targets.Add(targetSelf);
-        }
-        else
-        {
-            possibleTargets.Add(targetSelf);
-        }
+                possibleTargets.AddRange(units);
+                // TODO : Need to check if this is needed
+                //if (targetSelf is Unit) targets.Add(targetSelf);
+            }
+            else
+            {
+                possibleTargets.Add(targetSelf);
+            }
         // Filter out duplicate entries and non-existing
         possibleTargets = possibleTargets.Distinct().ToList();
         // Add origin in case of no targets and using a target position cast
@@ -1215,7 +1211,7 @@ public class Skill
                     {
                         consumedItemTemplates.Add((lastAppliedEffect.ConsumeItemId, lastAppliedEffect.ConsumeItemCount));
                     }
-                    else if(consumeItemId != 0) // HOTFIX
+                    else if (consumeItemId != 0) // HOTFIX
                     {
                         inventory = player.Inventory.CheckItems(SlotType.Bag, consumeItemId, lastAppliedEffect.ConsumeItemCount);
                         equipment = player.Inventory.CheckItems(SlotType.Equipment, consumeItemId, lastAppliedEffect.ConsumeItemCount);
@@ -1249,12 +1245,12 @@ public class Skill
                                 break;
                         }
                         else
-                        if (!Template.FirstReagentOnly)
-                        {
-                            // Not enough reagent items
-                            Cancelled = true;
-                            return;
-                        }
+                            if (!Template.FirstReagentOnly)
+                            {
+                                // Not enough reagent items
+                                Cancelled = true;
+                                return;
+                            }
                     }
 
                     if (!foundValidReagents)
@@ -1414,7 +1410,7 @@ public class Skill
             foreach (var (templateId, amount) in consumedItemTemplates)
             {
                 player.Inventory.ConsumeItem(null, ItemTaskType.SkillEffectGainItem, templateId, amount, null);
-               //player.Inventory.ConsumeItem(null, ItemTaskType.SkillEffectConsumption, templateId, amount, null);
+                //player.Inventory.ConsumeItem(null, ItemTaskType.SkillEffectConsumption, templateId, amount, null);
             }
         }
     }
@@ -1622,20 +1618,10 @@ AlwaysHit:
     public static (double MinRange, double MaxRange) CalculateRange(Unit unit, SkillTemplate template)
     {
         var skillRange = unit.SkillModifiersCache.ApplyModifiers(template.Id, SkillAttribute.Range, template.MaxRange);
-        
-        // Для базовых навыков ближнего боя (ID=2,3,4) ограничиваем максимальную дистанцию разумным значением
-        // Это предотвращает использование слишком больших значений из Template (например, 25 метров)
-        if (template.Id == 2 || template.Id == 3 || template.Id == 4)
-        {
-            // Если дистанция в Template равна 0 или слишком большая (> 5 метров), используем значение по умолчанию
-            if (skillRange == 0 || skillRange > 5.0)
-                skillRange = 4f;
-        }
-        else
-        {
-            if (skillRange == 0)
-                skillRange = 4f;
-        }
+
+        // Fallback to 4f only when skillRange is 0 (undefined)
+        if (skillRange == 0)
+            skillRange = 4f;
 
         var minRangeCheck = template.MinRange * 1.0;
         var maxRangeCheck = skillRange;
@@ -1657,14 +1643,11 @@ AlwaysHit:
                 maxWeaponRange = weaponTemplate.HoldableTemplate.MaxRange;
             }
 
-            // Для базовых навыков ближнего боя (ID=2,3,4) используем минимальное значение для maxRange
-            // Это ограничивает дистанцию ближнего боя реальной дистанцией оружия (мечом нельзя достать на 25 метров)
-            // Но используем максимальное значение для minRange, чтобы не было проблем с минимальной дистанцией
+            // Для базовых навыков ближнего боя (ID=2,3,4) ограничиваем maxRange реальной дистанцией оружия
+            // Это предотвращает использование слишком больших значений из Template (например, 25 метров)
             if (template.Id == 2 || template.Id == 3 || template.Id == 4)
             {
-                minRangeCheck = Math.Min(minRangeCheck, minWeaponRange); // Используем минимальное значение для minRange
-                // Для maxRange используем минимальное значение между дистанцией скилла и оружия
-                // Это ограничивает дистанцию ближнего боя реальной дистанцией оружия
+                minRangeCheck = Math.Min(minRangeCheck, minWeaponRange);
                 maxRangeCheck = Math.Min(maxRangeCheck, maxWeaponRange);
             }
             else
@@ -1673,6 +1656,13 @@ AlwaysHit:
                 minRangeCheck = minWeaponRange;
                 maxRangeCheck = maxWeaponRange;
             }
+        }
+        else if (template.Id == 2 || template.Id == 3 || template.Id == 4)
+        {
+            // Safety clamp for melee base skills without a weapon slot configured.
+            // If Template.MaxRange is unreasonably large (e.g., 25m), fall back to 4f.
+            if (maxRangeCheck > 5.0)
+                maxRangeCheck = 4f;
         }
 
         return (minRangeCheck, maxRangeCheck);

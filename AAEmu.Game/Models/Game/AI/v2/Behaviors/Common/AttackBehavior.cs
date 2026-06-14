@@ -23,6 +23,9 @@ public class AttackBehavior : BaseCombatBehavior
         if (!Validate())
             return;
 
+        // Initialize AI parameters from template (required for PickSkillAndUseIt)
+        Ai.Param = Ai.Owner.Template.AiParams;
+
         InitializeCombatState();
         _isInitialized = true;
         //Logger.Debug($"Unit {Ai.Owner.ObjId}:{Ai.Owner.TemplateId} entered attack state");

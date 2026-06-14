@@ -60,6 +60,41 @@ English:
 
 Files changed: `AAEmu.Game/Configurations/World.json`, `AAEmu.Game/Core/Managers/AiGeodataManager.cs`, `AAEmu.Game/Core/Managers/SpawnHeightDiagnostics.cs`, `AAEmu.Game/Models/Game/AI/AStar/PathNode.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/BaseCombatBehavior.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/Flytrap/FlytrapAttackBehavior.cs`, `AAEmu.Game/Models/Game/Configurations.cs`, `AAEmu.Game/Models/Game/NPChar/Npc.cs`, `AAEmu.Game/Models/Game/NPChar/NpcSpawnerNpc.cs`, `AAEmu.Game/Models/Game/NPChar/TrackAndStoreCoordinates.cs`, `AAEmu.Game/Scripts/Commands/Height.cs`, `AAEmu.Game/Scripts/Commands/HeightMob.cs`, `AAEmu.Game/Scripts/Commands/PathMob.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarEndPositionSubCommand.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarPathFindingSubCommand.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarStartPositionSubCommand.cs`, `AAEmu.Game/Scripts/Commands/AStar/AStarViewSubCommand.cs`, `Docs/analysis/00-architecture-review.md`
 
+Tests added:
+- `AAEmu.UnitTests/Game/Core/Managers/SpawnHeightDiagnosticsTests.cs` — 17 tests covering Record/TryGet/Remove/CleanupOldEntries/Clear, Entry properties, EntryTtl
+- `AAEmu.UnitTests/Game/Models/Game/NPChar/BuildingTests.cs` — 14 tests covering GetFloorHeight by index and by reference Z, edge cases
+- `AAEmu.UnitTests/Game/Models/Game/SpawnHeightConfigTests.cs` — 15 tests covering all default values and setters
+- `AAEmu.UnitTests/Game/Models/Game/PathingConfigTests.cs` — 20 tests covering all default values and setters
+- `AAEmu.UnitTests/Game/Models/Game/Ai/AStar/AStarHeapTests.cs` — 16 tests covering heap operations, ordering (F→H→Seq), dynamic resizing, AStarEntry struct
+- `AAEmu.UnitTests/Game/Models/Game/Ai/AStar/PathNodeDiagnosticsTests.cs` — 12 tests covering all diagnostic fields, PathStatus enum, EstimateFullPathLength
+- `AAEmu.UnitTests/Game/Models/Game/WorldConfigPathingTests.cs` — 6 tests covering WorldConfig.SpawnHeight and WorldConfig.Pathing defaults and assignment
+
+### Refactoring / Рефакторинг
+
+**refactor(ai-behavior): заменить хардкод константы MeleeAttackRange на настраиваемый параметр**
+
+На русском:
+- Убрана захардкоженная константа `MeleeAttackRange = 4f` в `Behavior.cs` — теперь используется `Ai.Param.MeleeAttackRange` (по умолчанию 4f, настраивается через `data.meleeAttackRange` в JSON NPC-параметров)
+- Исправлен баг в `SetWeaponRange`: метод использовал экипировку **цели** вместо **атакующего** — теперь корректно берётся оружие `Ai.Owner`
+- Добавлена константа `FlyingHeightGapMultiplier = 3.5f` для вертикального обнаружения летающих NPC — семантически отделена от ближнего боя
+- В `Skill.cs CalculateRange` добавлена safety-проверка для базовых навыков ближнего боя (ID 2/3/4) без настроенного слота оружия — если `Template.MaxRange > 5.0`, ограничивается до 4f
+- Упрощена логика fallback в `CalculateRange` — убран избыточный ветвящийся код для melee/non-melee
+- Удалены неиспользуемые импорты (`System`, `System.Linq`, `System.Collections.Generic`, `System.Threading.Tasks`) из `Behavior.cs` и `Skill.cs`
+- Исправлена отступка в блоках `else` в `Skill.cs` (`ApplyEffects`, проверка реагентов)
+
+English:
+- Removed hardcoded `MeleeAttackRange = 4f` constant in `Behavior.cs` — now uses `Ai.Param.MeleeAttackRange` (default 4f, configurable via `data.meleeAttackRange` in NPC AI params JSON)
+- Fixed bug in `SetWeaponRange`: method was using the **target's** equipment instead of the **attacker's** — now correctly reads `Ai.Owner` equipment
+- Added `FlyingHeightGapMultiplier = 3.5f` constant for flying NPC vertical detection — semantically separated from melee range
+- Added safety clamp in `Skill.cs CalculateRange` for melee base skills (ID 2/3/4) without a weapon slot configured — if `Template.MaxRange > 5.0`, clamped to 4f
+- Simplified fallback logic in `CalculateRange` — removed redundant branching for melee/non-melee
+- Removed unused imports (`System`, `System.Linq`, `System.Collections.Generic`, `System.Threading.Tasks`) from `Behavior.cs` and `Skill.cs`
+- Fixed indentation in `else` blocks in `Skill.cs` (`ApplyEffects`, reagent checking)
+
+Files changed: `AAEmu.Game/Models/Game/AI/v2/Framework/Behavior.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/WildBoar/WildBoarAttackBehavior.cs`, `AAEmu.Game/Models/Game/Skills/Skills.cs`
+
+Docs added: `Docs/analysis/05-ai-behavior-refactor-review.md`
+
 ---
 
 ## [5.0.7.0 private] - 03.06.2026 (6)
@@ -552,12 +587,17 @@ English:
 ## Информация / Information
 
 **Версия сервера / Server version:** 5.0.7.0 private
-**Последнее обновление / Last updated:** 13.06.2026
+**Последнее обновление / Last updated:** 14.06.2026
 **Ветка / Branch:** client_version/5.0_client_(2018-12-25)
 
 ---
 
 ## Commit History / История коммитов
+
+### 2026-06-14
+
+- **fe778e7a0** - test(pathfinding): добавить юнит-тесты для SpawnHeightDiagnostics, Building, Configs, AStarHeap, PathNode diagnostics
+- **review(ai-behavior)** - refactor(ai-behavior): заменить хардкод MeleeAttackRange на Ai.Param, исправить SetWeaponRange (атакующий вместо цели), добавить safety clamp для melee без оружия, 100 юнит-тестов
 
 ### 2026-06-13
 
