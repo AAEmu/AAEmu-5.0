@@ -76,6 +76,15 @@ public abstract class Behavior
     /// <returns>Result of skill usage</returns>
     public SkillResult PickSkillAndUseIt(SkillUseConditionKind kind, BaseUnit target, float targetDist)
     {
+        if (Ai.Owner?.IsDead ?? true)
+            return SkillResult.Failure;
+
+        if (Ai.Owner.Buffs.HasEffectsMatchingCondition(e => e.Template.Knockdown || e.Template.Sleep || e.Template.Stun))
+        {
+            Logger.Debug("PickSkillAndUseIt:BlockedByCrowdControl (Knockdown/Sleep/Stun) Owner.ObjId {0}, Owner.TemplateId {1}", Ai.Owner.ObjId, Ai.Owner.TemplateId);
+            return SkillResult.CannotCastInStun;
+        }
+
         var res = SkillResult.InvalidSkill;
         var skills = new List<NpcSkill>();
         if (Ai.Owner.Template.Skills.TryGetValue(kind, out var templateSkill))

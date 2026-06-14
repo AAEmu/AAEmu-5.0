@@ -36,6 +36,28 @@ Source: `https://github.com/devincean-gif/archeage-v5.0-patches`
 
 ---
 
+## [Unreleased]
+
+### Bug Fixes / Исправления
+
+**fix(ai-behavior): добавить проверку CC-эффектов в PickSkillAndUseIt, убрать dead code**
+
+На русском:
+- Добавлена проверка блокировки каста навыков при эффектах контроля толпы (Knockdown/Sleep/Stun) в методе `PickSkillAndUseIt` — ранее NPC могли использовать навыки будучи оглушёнными, спящими или сбитыми с ног
+- Проверка выполняется инлайн через `HasEffectsMatchingCondition`, что соответствует существующему паттерну в `BaseCombatBehavior.CanUseSkill` и `Npc.MoveTowards`
+- Удалён неиспользуемый кэширующий флаг `_isCrowdControlBlocked` и метод `UpdateCrowdControlState()`, который нигде не вызывался (dead code)
+- Добавлена null-safe проверка `IsDead` (`Ai.Owner?.IsDead ?? true`) для предотвращения `NullReferenceException` при отсутствии владельца AI
+
+English:
+- Added crowd control check (Knockdown/Sleep/Stun) in `PickSkillAndUseIt` — previously NPCs could use skills while stunned, sleeping, or knocked down
+- Check is performed inline via `HasEffectsMatchingCondition`, matching the existing pattern in `BaseCombatBehavior.CanUseSkill` and `Npc.MoveTowards`
+- Removed unused `_isCrowdControlBlocked` cache field and `UpdateCrowdControlState()` method that was never called (dead code)
+- Added null-safe `IsDead` check (`Ai.Owner?.IsDead ?? true`) to prevent `NullReferenceException` when AI owner is missing
+
+Files changed: `AAEmu.Game/Models/Game/AI/v2/Framework/Behavior.cs`
+
+---
+
 ## [5.0.7.0 private] - 13.06.2026
 
 ### Features / Новые функции
@@ -598,6 +620,7 @@ English:
 
 - **fe778e7a0** - test(pathfinding): добавить юнит-тесты для SpawnHeightDiagnostics, Building, Configs, AStarHeap, PathNode diagnostics
 - **review(ai-behavior)** - refactor(ai-behavior): заменить хардкод MeleeAttackRange на Ai.Param, исправить SetWeaponRange (атакующий вместо цели), добавить safety clamp для melee без оружия, 100 юнит-тестов
+- **fix(ai-behavior)** - fix(ai-behavior): добавить проверку CC-эффектов (Knockdown/Sleep/Stun) в PickSkillAndUseIt, убрать dead code (_isCrowdControlBlocked, UpdateCrowdControlState), добавить null-safe проверку IsDead
 
 ### 2026-06-13
 
