@@ -40,7 +40,12 @@ public class CSBroadcastVisualOption_0_Packet() : GamePacket(CSOffsets.CSBroadca
         //Connection.ActiveChar.Buffs.AddBuff((uint)SkillConstants.Patron, Connection.ActiveChar);
         //Connection.ActiveChar.Buffs.AddBuff((uint)SkillConstants.AuctionLicense, Connection.ActiveChar);
 
+        Logger.Info("CSBroadcastVisualOption_0 applying appellation buff: character {0}, owner {1}, active appellation {2}, active buff {3}",
+            character.Name, character.Id, character.Appellations.ActiveAppellation, character.Appellations.ActiveAppellationBuffId);
+        character.Appellations.ApplyActiveBuff();
+
         Connection.SendPacket(new SCUnitStatePacket(Connection.ActiveChar));
+        character.Appellations.SendActiveAppellation();
         Connection.SendPacket(new SCCooldownsPacket(Connection.ActiveChar));
         // List packet alone is not enough - need per-skill SCUpdateSkillActiveTypePacket to activate in UI
         character.SkillActiveTypes.SendOnLogin();

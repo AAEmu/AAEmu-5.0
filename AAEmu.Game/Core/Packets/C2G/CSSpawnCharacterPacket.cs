@@ -24,6 +24,9 @@ public class CSSpawnCharacterPacket : GamePacket
         Connection.ActiveChar.DisabledSetPosition = false;
         Logger.Warn("CSSpawnCharacterPacket, X: {0}, Y: {1}, Z: {2}", x, y, z);
 
+        Logger.Info("CSSpawnCharacterPacket applying appellation buff: character {0}, owner {1}, active appellation {2}, active buff {3}",
+            Connection.ActiveChar.Name, Connection.ActiveChar.Id, Connection.ActiveChar.Appellations.ActiveAppellation, Connection.ActiveChar.Appellations.ActiveAppellationBuffId);
+        Connection.ActiveChar.Appellations.ApplyActiveBuff();
         WorldManager.ResendVisibleObjectsToCharacter(Connection.ActiveChar);
     }
 }

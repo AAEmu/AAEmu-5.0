@@ -1,4 +1,4 @@
-/*
+﻿/*
  Navicat Premium Data Transfer
 
  Source Server         : archeage
@@ -80,6 +80,7 @@ CREATE TABLE `appellations`  (
   `id` int UNSIGNED NOT NULL,
   `active` tinyint(1) NOT NULL DEFAULT 0,
   `owner` int UNSIGNED NOT NULL,
+  `buff_id` int UNSIGNED NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`, `owner`) USING BTREE
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'Earned titles' ROW_FORMAT = Dynamic;
 

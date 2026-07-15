@@ -260,6 +260,10 @@ public class SCUnitStatePacket : GamePacket
                 {
                     var learnedSkillCount = character.Skills.Skills.Values.Count;
                     var passiveBuffCount = character.Skills.PassiveBuffs.Values.Count;
+                    var activeAppellationPassiveBuffId = character.Appellations.GetActivePassiveBuffIdForClient();
+                    var includeAppellationPassiveBuff = activeAppellationPassiveBuffId != 0 && !character.Skills.PassiveBuffs.ContainsKey(activeAppellationPassiveBuffId);
+                    if (includeAppellationPassiveBuff)
+                        passiveBuffCount++;
 
                     stream.Write((byte)learnedSkillCount);       // learnedSkillCount
                     if (learnedSkillCount > 0)
@@ -279,9 +283,21 @@ public class SCUnitStatePacket : GamePacket
                         .ToArray();
                     stream.WritePiscW(learnedSkillCount, arrSkills);
 
-                    var arrBuffs = character.Skills.PassiveBuffs.Values
-                        .Select(buff => (long)buff.Id)
-                        .ToArray();
+                    var arrBuffs = new long[passiveBuffCount];
+                    var passiveBuffIndex = 0;
+                    foreach (var buff in character.Skills.PassiveBuffs.Values)
+                    {
+                        arrBuffs[passiveBuffIndex] = buff.Id;
+                        passiveBuffIndex++;
+                    }
+
+                    if (includeAppellationPassiveBuff)
+                    {
+                        arrBuffs[passiveBuffIndex] = activeAppellationPassiveBuffId;
+                        Logger.Info("SCUnitStatePacket includes appellation passive buff {0}, character {1}, active appellation {2}",
+                            activeAppellationPassiveBuffId, character.Id, character.Appellations.ActiveAppellation);
+                    }
+
                     stream.WritePiscW(passiveBuffCount, arrBuffs);
                     break;
                 }

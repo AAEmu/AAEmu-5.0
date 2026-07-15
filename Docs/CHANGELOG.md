@@ -1,5 +1,23 @@
 ﻿# CHANGELOG - AAEmu 5.0.7.0 Private Server
 
+## [Unreleased]
+
+### Fixes / Исправления
+
+**fix(appellation): применять эффект титула при входе в мир**
+
+- При входе персонажа в мир активный титул и выбранный эффект восстанавливаются из `aaemu_game_5070.appellations`
+- Сохраненный `appellations.buff_id` резолвится через `passive_buffs` в реальный runtime-бафф из `buffs`, поэтому для `buff_id=19` применяется эффект `558`
+- `CSBroadcastVisualOption_0` повторно применяет активный эффект титула перед отправкой состояния юнита
+- `SCUnitStatePacket` добавляет активный титульный passive buff в список passive buffs персонажа для клиентской синхронизации
+- После отправки `SCUnitStatePacket` сервер повторяет `SCAppellationChangedPacket`, чтобы клиент получил пару `appellationId + buffId`, как при ручной смене титула
+- При отказе от титула снимается резолвленный runtime-бафф эффекта
+- Добавлены диагностические логи и расширены тесты `CharacterAppellationsTests`
+
+Files changed: `AAEmu.Game/Models/Game/Char/CharacterAppellations.cs`, `AAEmu.Game/Core/Packets/C2G/CSBroadcastVisualOption_0_Packet.cs`, `AAEmu.Game/Core/Packets/C2G/CSSpawnCharacterPacket.cs`, `AAEmu.Game/Core/Packets/G2C/SCUnitStatePacket.cs`, `AAEmu.UnitTests/Game/Models/Game/Char/CharacterAppellationsTests.cs`
+
+---
+
 ## [5.0.7.0 private] - 15.07.2026
 
 ### Fixes / Исправления
@@ -36,26 +54,37 @@ Source: `https://github.com/devincean-gif/archeage-v5.0-patches`
 
 ---
 
-## [Unreleased]
-
 ## [5.0.7.0 private] - 14.06.2026
 
-### Bug Fixes / Исправления
+### Refactoring / Рефакторинг
 
-**fix(appellation): исправить применение баффа при смене звания — сделать buff_id серверно-авторитетным**
+**refactor(ai-behavior): заменить хардкод константы MeleeAttackRange на настраиваемый параметр**
 
-- `addBuff` получал ID титула, но вызывался с сырым ID баффа из клиентского пакета — `GetAppellationsTemplate(buffId)` всегда возвращал `null`, бафф никогда не применялся
-- `Change()` и `Load()` теперь определяют `BuffId` из серверного шаблона `AppellationTemplate.BuffId`, а не из клиентских данных
-- Добавлено предупреждение при несовпадении клиентского `buff_id` с серверным значением для защиты от подмены
-- `addBuff` рефакторен: теперь принимает сырой ID баффа напрямую, без поиска по шаблону
-- Добавлена SQL-миграция: колонка `buff_id` в таблице `appellations`
-- Обновлены юнит-тесты: используется Moq для проверки вызова `AddBuff` с корректным ID
+На русском:
+- Убрана захардкоженная константа `MeleeAttackRange = 4f` в `Behavior.cs` — теперь используется `Ai.Param.MeleeAttackRange` (по умолчанию 4f, настраивается через `data.meleeAttackRange` в JSON NPC-параметров)
+- Исправлен баг в `SetWeaponRange`: метод использовал экипировку **цели** вместо **атакующего** — теперь корректно берётся оружие `Ai.Owner`
+- Добавлена константа `FlyingHeightGapMultiplier = 3.5f` для вертикального обнаружения летающих NPC — семантически отделена от ближнего боя
+- В `Skill.cs CalculateRange` добавлена safety-проверка для базовых навыков ближнего боя (ID 2/3/4) без настроенного слота оружия — если `Template.MaxRange > 5.0`, ограничивается до 4f
+- Упрощена логика fallback в `CalculateRange` — убран избыточный ветвящийся код для melee/non-melee
+- Удалены неиспользуемые импорты (`System`, `System.Linq`, `System.Collections.Generic`, `System.Threading.Tasks`) из `Behavior.cs` и `Skill.cs`
+- Исправлена отступка в блоках `else` в `Skill.cs` (`ApplyEffects`, проверка реагентов)
 
-Files changed: `AAEmu.Game/Models/Game/Char/CharacterAppellations.cs`, `AAEmu.Game/SQL/updates/2026-06-14_aaemu_game_appellations_add_buff_id.sql`, `AAEmu.UnitTests/Game/Models/Game/Char/CharacterAppellationsTests.cs`
+English:
+- Removed hardcoded `MeleeAttackRange = 4f` constant in `Behavior.cs` — now uses `Ai.Param.MeleeAttackRange` (default 4f, configurable via `data.meleeAttackRange` in NPC AI params JSON)
+- Fixed bug in `SetWeaponRange`: method was using the **target's** equipment instead of the **attacker's** — now correctly reads `Ai.Owner` equipment
+- Added `FlyingHeightGapMultiplier = 3.5f` constant for flying NPC vertical detection — semantically separated from melee range
+- Added safety clamp in `Skill.cs CalculateRange` for melee base skills (ID 2/3/4) without a weapon slot configured — if `Template.MaxRange > 5.0`, clamped to 4f
+- Simplified fallback logic in `CalculateRange` — removed redundant branching for melee/non-melee
+- Removed unused imports (`System`, `System.Linq`, `System.Collections.Generic`, `System.Threading.Tasks`) from `Behavior.cs` and `Skill.cs`
+- Fixed indentation in `else` blocks in `Skill.cs` (`ApplyEffects`, reagent checking)
 
-Docs added: `Docs/appellation-buff-id-server-authoritative-2026-06-14.md`
+Files changed: `AAEmu.Game/Models/Game/AI/v2/Framework/Behavior.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/WildBoar/WildBoarAttackBehavior.cs`, `AAEmu.Game/Models/Game/Skills/Skills.cs`
+
+Docs added: `Docs/analysis/05-ai-behavior-refactor-review.md`
 
 ---
+
+### Fixes / Исправления
 
 **fix(ai-behavior): добавить проверку CC-эффектов в PickSkillAndUseIt, убрать dead code**
 
@@ -72,6 +101,32 @@ English:
 - Added null-safe `IsDead` check (`Ai.Owner?.IsDead ?? true`) to prevent `NullReferenceException` when AI owner is missing
 
 Files changed: `AAEmu.Game/Models/Game/AI/v2/Framework/Behavior.cs`
+
+---
+
+**fix(appellation): исправить применение баффа при смене звания — сделать buff_id серверно-авторитетным**
+
+- `addBuff` получал ID титула, но вызывался с сырым ID баффа из клиентского пакета — `GetAppellationsTemplate(buffId)` всегда возвращал `null`, бафф никогда не применялся
+- `Change()` и `Load()` теперь определяют `BuffId` из серверного шаблона `AppellationTemplate.BuffId`, а не из клиентских данных
+- Добавлено предупреждение при несовпадении клиентского `buff_id` с серверным значением для защиты от подмены
+- `addBuff` рефакторен: теперь принимает сырой ID баффа напрямую, без поиска по шаблону
+- Добавлена SQL-миграция: колонка `buff_id` в таблице `appellations`
+- Обновлены юнит-тесты: используется Moq для проверки вызова `AddBuff` с корректным ID
+
+Files changed: `AAEmu.Game/Models/Game/Char/CharacterAppellations.cs`, `AAEmu.Game/SQL/updates/2026-06-14_aaemu_game_appellations_add_buff_id.sql`, `AAEmu.UnitTests/Game/Models/Game/Char/CharacterAppellationsTests.cs`
+
+Docs added: `Docs/appellation-buff-id-server-authoritative-2026-06-14.md`
+
+---
+
+**fix(appellation): адаптировать серверный buff_id титулов**
+
+- После переноса `2b0c40d97044a4f1ce6936f54538e0b459fd0e9b` исправлена адаптация `CharacterAppellations.Change()` для текущей ветки
+- Активный `buff_id` снова вычисляется по серверному `AppellationTemplate`, а клиентское/сохраненное значение используется только для диагностики несовпадения
+- Canonical dump `SQL/aaemu_game.sql` синхронизирован с SQL-миграцией: добавлена колонка `appellations.buff_id`
+- Точечные тесты `CharacterAppellationsTests` проходят после адаптации
+
+Files changed: `AAEmu.Game/Models/Game/Char/CharacterAppellations.cs`, `SQL/aaemu_game.sql`
 
 ---
 
@@ -108,33 +163,6 @@ Tests added:
 - `AAEmu.UnitTests/Game/Models/Game/Ai/AStar/PathNodeDiagnosticsTests.cs` — 12 tests covering all diagnostic fields, PathStatus enum, EstimateFullPathLength
 - `AAEmu.UnitTests/Game/Models/Game/WorldConfigPathingTests.cs` — 6 tests covering WorldConfig.SpawnHeight and WorldConfig.Pathing defaults and assignment
 
-### Refactoring / Рефакторинг
-
-**refactor(ai-behavior): заменить хардкод константы MeleeAttackRange на настраиваемый параметр**
-
-На русском:
-- Убрана захардкоженная константа `MeleeAttackRange = 4f` в `Behavior.cs` — теперь используется `Ai.Param.MeleeAttackRange` (по умолчанию 4f, настраивается через `data.meleeAttackRange` в JSON NPC-параметров)
-- Исправлен баг в `SetWeaponRange`: метод использовал экипировку **цели** вместо **атакующего** — теперь корректно берётся оружие `Ai.Owner`
-- Добавлена константа `FlyingHeightGapMultiplier = 3.5f` для вертикального обнаружения летающих NPC — семантически отделена от ближнего боя
-- В `Skill.cs CalculateRange` добавлена safety-проверка для базовых навыков ближнего боя (ID 2/3/4) без настроенного слота оружия — если `Template.MaxRange > 5.0`, ограничивается до 4f
-- Упрощена логика fallback в `CalculateRange` — убран избыточный ветвящийся код для melee/non-melee
-- Удалены неиспользуемые импорты (`System`, `System.Linq`, `System.Collections.Generic`, `System.Threading.Tasks`) из `Behavior.cs` и `Skill.cs`
-- Исправлена отступка в блоках `else` в `Skill.cs` (`ApplyEffects`, проверка реагентов)
-
-English:
-- Removed hardcoded `MeleeAttackRange = 4f` constant in `Behavior.cs` — now uses `Ai.Param.MeleeAttackRange` (default 4f, configurable via `data.meleeAttackRange` in NPC AI params JSON)
-- Fixed bug in `SetWeaponRange`: method was using the **target's** equipment instead of the **attacker's** — now correctly reads `Ai.Owner` equipment
-- Added `FlyingHeightGapMultiplier = 3.5f` constant for flying NPC vertical detection — semantically separated from melee range
-- Added safety clamp in `Skill.cs CalculateRange` for melee base skills (ID 2/3/4) without a weapon slot configured — if `Template.MaxRange > 5.0`, clamped to 4f
-- Simplified fallback logic in `CalculateRange` — removed redundant branching for melee/non-melee
-- Removed unused imports (`System`, `System.Linq`, `System.Collections.Generic`, `System.Threading.Tasks`) from `Behavior.cs` and `Skill.cs`
-- Fixed indentation in `else` blocks in `Skill.cs` (`ApplyEffects`, reagent checking)
-
-Files changed: `AAEmu.Game/Models/Game/AI/v2/Framework/Behavior.cs`, `AAEmu.Game/Models/Game/AI/v2/Behaviors/WildBoar/WildBoarAttackBehavior.cs`, `AAEmu.Game/Models/Game/Skills/Skills.cs`
-
-Docs added: `Docs/analysis/05-ai-behavior-refactor-review.md`
-
----
 
 ## [5.0.7.0 private] - 03.06.2026 (6)
 
@@ -626,19 +654,23 @@ English:
 ## Информация / Information
 
 **Версия сервера / Server version:** 5.0.7.0 private
-**Последнее обновление / Last updated:** 14.06.2026
+**Последнее обновление / Last updated:** 15.07.2026
 **Ветка / Branch:** client_version/5.0_client_(2018-12-25)
 
 ---
 
 ## Commit History / История коммитов
 
+### 2026-07-15
+
+- **986517326** - fix(appellation): исправить работу титулов и баффов от них
+- **3291ff88c** - fix(ai-behavior): добавить проверку CC-эффектов (Knockdown/Sleep/Stun) в PickSkillAndUseIt, убрать dead code
+- **4b0ebef0d** - refactor(ai-behavior): заменить хардкод MeleeAttackRange на настраиваемый параметр, исправить SetWeaponRange
+- **d8127a25c** - fix(patches): внедрить патчи AAFree 5.0 от devincean-gif
+
 ### 2026-06-14
 
 - **fe778e7a0** - test(pathfinding): добавить юнит-тесты для SpawnHeightDiagnostics, Building, Configs, AStarHeap, PathNode diagnostics
-- **review(ai-behavior)** - refactor(ai-behavior): заменить хардкод MeleeAttackRange на Ai.Param, исправить SetWeaponRange (атакующий вместо цели), добавить safety clamp для melee без оружия, 100 юнит-тестов
-- **fix(ai-behavior)** - fix(ai-behavior): добавить проверку CC-эффектов (Knockdown/Sleep/Stun) в PickSkillAndUseIt, убрать dead code (_isCrowdControlBlocked, UpdateCrowdControlState), добавить null-safe проверку IsDead
-- **fix(appellation)** - fix(appellation): сделать buff_id серверно-авторитетным при смене звания, добавить SQL-миграцию, обновить юнит-тесты
 
 ### 2026-06-13
 
