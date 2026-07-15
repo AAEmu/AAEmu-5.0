@@ -1,0 +1,45 @@
+﻿--- a/game/libs/particles/abillity_skill_table_m.xml
++++ b/game/libs/particles/abillity_skill_table_m.xml
+@@ -19077,33 +19077,33 @@
+   </Childs>
+  </Particles>
+  <Particles Name="system_skill.reading_roll_form" Id="{4C27C8D6-EE40-421C-95D1-65811AAB9E6F}">
+-  <Params Continuous="true" Speed="0.1"/>
++  <Params EmitterLifeTime="6" Continuous="false" Speed="0.1"/>
+   <Childs>
+    <Particles Name="spell_shield_form1">
+-    <Params Continuous="true" Count="5" PulsePeriod=",0.5" ParticleLifeTime="1.5,0.5" BlendType="Additive" Texture="game/textures/p_effects/flare_11.dds" Alpha=",0.1,,(;0.3482143,0.863;1)" Color="(0.663,0.99,0.953)" DiffuseBacklighting="0.2" EmissiveLighting="0.2" Size="0.8,0.3,,(,0.704,32;1,1)" SizeX=",0.5" SizeY=",0.5" Speed="0" EmitAngle="180" InitAngles="180,180,180" RandomAngles="180,180,180" FillRateCost="0" BindToEmitter="true"/>
++    <Params EmitterLifeTime="6" Continuous="false" Count="0" PulsePeriod=",0.5" ParticleLifeTime="1.5,0.5" BlendType="Additive" Texture="game/textures/p_effects/flare_11.dds" Alpha="0" Color="(0.663,0.99,0.953)" DiffuseBacklighting="0.2" EmissiveLighting="0.2" Size="0.8,0.3,,(,0.704,32;1,1)" SizeX=",0.5" SizeY=",0.5" Speed="0" EmitAngle="180" InitAngles="180,180,180" RandomAngles="180,180,180" FillRateCost="0" BindToEmitter="true"/>
+    </Particles>
+    <Particles Name="spell_shield_form2">
+-    <Params Count="25" PulsePeriod="0.1" ParticleLifeTime="1.2,0.3" TextureTiling="4,4,,,15,,,true" Material="Materials/effects/keffect/zz_ref_seq7" SoftParticle="true" Alpha="0.35,0.25,,(;0.12946428,0.59;1)" Color=",0.2,,(0.04385965,(0.51,0.992,0.827))" DiffuseBacklighting="0.1" EmissiveLighting="0.1" Size="0.45,0.5,,(,0.66;1,0.91,32)" SizeX="2,0.3,,(0.01339286,0.48;1,0.77)" SizeY="1.3,0.3,,(0.004464286,0.683;0.9866071,1)" Stretch=",0.15,,(0.004464286,1;0.15625,0.546;0.3571429,0.16;0.71875;1)" Speed="0,0.25" Turbulence3DSpeed=",0.2" FocusAngle="90" InitAngles=",,-45" RandomAngles=",,180" RotationRate=",,5" RandomRotationRate=",,15" DrawLast="29" FillRateCost="0"/>
++    <Params EmitterLifeTime="6" Count="0" PulsePeriod="0.1" ParticleLifeTime="1.2,0.3" TextureTiling="4,4,,,15,,,true" Material="Materials/effects/keffect/zz_ref_seq7" SoftParticle="true" Alpha="0" Color=",0.2,,(0.04385965,(0.51,0.992,0.827))" DiffuseBacklighting="0.1" EmissiveLighting="0.1" Size="0.45,0.5,,(,0.66;1,0.91,32)" SizeX="2,0.3,,(0.01339286,0.48;1,0.77)" SizeY="1.3,0.3,,(0.004464286,0.683;0.9866071,1)" Stretch=",0.15,,(0.004464286,1;0.15625,0.546;0.3571429,0.16;0.71875;1)" Speed="0,0.25" Turbulence3DSpeed=",0.2" FocusAngle="90" InitAngles=",,-45" RandomAngles=",,180" RotationRate=",,5" RandomRotationRate=",,15" DrawLast="29" FillRateCost="0"/>
+    </Particles>
+    <Particles Name="sound_112">
+-    <Params Continuous="true" Sound="Sounds/x2eventsounds:portal:portal_gate_form"/>
++    <Params EmitterLifeTime="6" Continuous="true" Sound="Sounds/x2eventsounds:portal:portal_gate_form"/>
+    </Particles>
+    <Particles Name="spell_shield_form3">
+-    <Params Continuous="true" BlendType="Additive" Texture="textures/p_effects/glow_big.tif" SoftParticle="true" Alpha="0.2" DiffuseLighting="0.2" DiffuseBacklighting="0.1" EmissiveLighting="0.5" LightSourceIntensity="0.7,,,(,1;0.5089286,0.91;1,1)" LightHDRDynamic="1" LightSourceRadius="1.5" Speed="0" BindToEmitter="true"/>
++    <Params EmitterLifeTime="6" ParticleLifeTime="1.5,0.5" Continuous="false" Count="0" BlendType="Additive" Texture="textures/p_effects/glow_big.tif" SoftParticle="true" Alpha="0" DiffuseLighting="0.2" DiffuseBacklighting="0.1" EmissiveLighting="0.5" LightSourceIntensity="0" LightHDRDynamic="1" LightSourceRadius="0" Speed="0" BindToEmitter="true"/>
+    </Particles>
+   </Childs>
+  </Particles>
+  <Particles Name="system_skill.reading_roll_launch" Id="{71056687-65F5-4C75-A5FF-C5D193E0F060}">
+-  <Params Speed="0.1"/>
++  <Params EmitterLifeTime="2" Speed="0.1"/>
+   <Childs>
+    <Particles Name="spell_shield_form1">
+-    <Params Count="2" ParticleLifeTime="0.5,0.5" BlendType="Additive" Texture="game/textures/p_effects/flare_11.dds" Alpha=",0.1,,(,,32;0.04910714,1;0.125,1,32;1)" Color="(0.663,0.99,0.953)" DiffuseBacklighting="0.2" EmissiveLighting="0.2" LightSourceIntensity="0.5,,,(,,32;0.03125,1;0.9598214)" LightHDRDynamic="1" LightSourceRadius="1.5" Size="1.5,0.3,,(,0.567,32;0.04910714,0.817,32;1,1)" SizeX=",0.5" SizeY=",0.5" Speed="0" InitAngles="10,,180" RandomAngles=",,180" FillRateCost="0" BindToEmitter="true"/>
++    <Params EmitterLifeTime="2" Count="0" ParticleLifeTime="0.5,0.5" BlendType="Additive" Texture="game/textures/p_effects/flare_11.dds" Alpha="0" Color="(0.663,0.99,0.953)" DiffuseBacklighting="0.2" EmissiveLighting="0.2" LightSourceIntensity="0" LightHDRDynamic="1" LightSourceRadius="0" Size="1.5,0.3,,(,0.567,32;0.04910714,0.817,32;1,1)" SizeX=",0.5" SizeY=",0.5" Speed="0" InitAngles="10,,180" RandomAngles=",,180" FillRateCost="0" BindToEmitter="true"/>
+    </Particles>
+    <Particles Name="spell_shield_form2">
+-    <Params Count="5" ParticleLifeTime="1.2,0.3" TextureTiling="4,4,,,15,,,true" Material="Materials/effects/keffect/zz_ref_seq7" SoftParticle="true" Alpha="0.2,0.25,,(,,32;0.035714287,1;1)" Color=",,,(0.04385965,(0.51,0.992,0.827))" DiffuseBacklighting="0.02" EmissiveLighting="0.1" Size="0.5,0.2,,(0.004464286,0.454,32;0.017857144,0.817,32;1,1,32)" SizeX=",0.3" SizeY="1.2,0.3" Stretch="0.25,0.15,,(,0.204,32;1,1)" Speed="0,0.25" Acceleration=",,0.35" Turbulence3DSpeed=",0.2" FocusGravityDir="true" EmitAngle="180,1" RandomAngles=",,180" RotationRate=",,5" RandomRotationRate=",,15" DrawLast="29" FillRateCost="0"/>
++    <Params EmitterLifeTime="2" Count="0" ParticleLifeTime="1.2,0.3" TextureTiling="4,4,,,15,,,true" Material="Materials/effects/keffect/zz_ref_seq7" SoftParticle="true" Alpha="0" Color=",,,(0.04385965,(0.51,0.992,0.827))" DiffuseBacklighting="0.02" EmissiveLighting="0.1" Size="0.5,0.2,,(0.004464286,0.454,32;0.017857144,0.817,32;1,1,32)" SizeX=",0.3" SizeY="1.2,0.3" Stretch="0.25,0.15,,(,0.204,32;1,1)" Speed="0,0.25" Acceleration=",,0.35" Turbulence3DSpeed=",0.2" FocusGravityDir="true" EmitAngle="180,1" RandomAngles=",,180" RotationRate=",,5" RandomRotationRate=",,15" DrawLast="29" FillRateCost="0"/>
+    </Particles>
+    <Particles Name="sound_112">
+-    <Params Sound="Sounds/x2eventsounds:portal:portal_caster_throw"/>
++    <Params EmitterLifeTime="2" Sound="Sounds/x2eventsounds:portal:portal_caster_throw"/>
+    </Particles>
+   </Childs>
+  </Particles>

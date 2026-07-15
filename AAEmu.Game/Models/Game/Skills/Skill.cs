@@ -923,14 +923,19 @@ public class Skill
             if (ShouldDelayEndSkillForRepeatFired())
             {
                 ScheduleRepeatFiredPackets(caster, casterCaster, firedTarget, skillObject, (short)totalDelay);
+                ApplyEffects(caster, casterCaster, target, targetCaster, skillObject);
             }
             else
             {
-                // скилл завершается до создания эффектов
+                // Apply effects (and send the SCUnitDamagedPacket) BEFORE ending the skill so the
+                // damage packet carries a still-valid TlId. EndSkill releases the TlId (sets it to 0)
+                // and tells the client the cast is over; doing that first makes the client drop the
+                // hit FX + floating damage number for instant skills such as auto-attack
+                // (skill 2: fire_anim_id=0 => totalDelay=0). HP still drops via SCUnitPointsPacket,
+                // which is why damage lands with no visible/audible hit. Matches ApplySkillTask order.
+                ApplyEffects(caster, casterCaster, target, targetCaster, skillObject);
                 EndSkill(caster);
             }
-
-            ApplyEffects(caster, casterCaster, target, targetCaster, skillObject);
         }
     }
 

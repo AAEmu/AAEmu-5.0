@@ -468,7 +468,14 @@ public class Unit : BaseUnit, IUnit
 
         Events.OnDeath(this, new OnDeathArgs { Killer = (Unit)killer, Victim = this });
         Buffs.RemoveEffectsOnDeath();
-        killer.BroadcastPacket(new SCUnitDeathPacket(ObjId, killReason, (Unit)killer), true);
+
+        // Character death penalty (exp + durability loss) for level > 15, scaling to 50
+        var deathLostExp = 0;
+        byte deathDurabilityLoss = 0;
+        if (this is Character deadChar)
+            deadChar.ApplyDeathPenalty(out deathLostExp, out deathDurabilityLoss);
+
+        killer.BroadcastPacket(new SCUnitDeathPacket(ObjId, killReason, (Unit)killer, deathLostExp, deathDurabilityLoss), true);
         if (killer == this)
         {
             switch (this)
@@ -480,6 +487,14 @@ public class Unit : BaseUnit, IUnit
                     DespawnMate(character);
                     break;
             }
+            return;
+        }
+
+        // A Mate (mount/pet) killed by something else should despawn and begin its revive cooldown,
+        // rather than dropping loot or running NPC combat cleanup.
+        if (this is Mate deadMate)
+        {
+            DespawnMate(WorldManager.Instance.GetCharacterByObjId(deadMate.OwnerObjId));
             return;
         }
 

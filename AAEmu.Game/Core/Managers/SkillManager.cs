@@ -12,6 +12,8 @@ using AAEmu.Game.Models.Game.Skills.Effects;
 using AAEmu.Game.Models.Game.Skills.Effects.Enums;
 using AAEmu.Game.Models.Game.Skills.Static;
 using AAEmu.Game.Models.Game.Skills.Templates;
+using AAEmu.Game.Models.Game.Items;
+using AAEmu.Game.Models.Game.Items.Templates;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Models.StaticValues;
@@ -2201,11 +2203,27 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
     /// <returns></returns>
     public static double GetAttackDelay(SkillTemplate skillTemplate, Unit caster, bool includeCooldown = true, double additionalDelay = 1000.0)
     {
-        // This isn't 100% accurate, but it feels "close enough"
-        // TODO: Implement weapon speed delays
         var castTime = skillTemplate.CastingTime * caster.CastTimeMul * 1.0;
         var coolDownTime = includeCooldown ? skillTemplate.CooldownTime * (caster.GlobalCooldownMul / 100.0) : 0.0;
-        var additionalTime = additionalDelay * (caster.GlobalCooldownMul / 100.0);
+
+        // Basic attacks (2 = melee, 3 = offhand, 4 = ranged): pace by the equipped weapon's
+        // attack speed (Holdable.Speed, in ms) instead of a flat 1000ms. Falls back to
+        // additionalDelay for fists / no weapon, and leaves the explicit additionalDelay=0
+        // NPC caller (RunCommandSetBehavior) untouched.
+        var baseDelay = additionalDelay;
+        if (additionalDelay > 0 && (skillTemplate.Id == 2 || skillTemplate.Id == 3 || skillTemplate.Id == 4))
+        {
+            var slot = skillTemplate.Id == 4 ? EquipmentItemSlot.Ranged
+                     : skillTemplate.Id == 3 ? EquipmentItemSlot.Offhand
+                     : EquipmentItemSlot.Mainhand;
+            if (caster.Equipment?.GetItemBySlot((int)slot)?.Template is WeaponTemplate wt
+                && wt.HoldableTemplate is { Speed: > 0 })
+            {
+                baseDelay = wt.HoldableTemplate.Speed;
+            }
+        }
+
+        var additionalTime = baseDelay * (caster.GlobalCooldownMul / 100.0);
         return castTime + coolDownTime + additionalTime;
     }
 

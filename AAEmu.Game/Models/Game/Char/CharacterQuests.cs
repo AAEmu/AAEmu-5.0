@@ -70,6 +70,16 @@ public class CharacterQuests
     /// <returns></returns>
     public bool AddQuest(uint questId, bool forcibly = false, QuestAcceptorType questAcceptorType = QuestAcceptorType.Unknown, uint acceptorId = 0)
     {
+        // Refuse quests disabled via WorldConfig.DisabledQuestIds (broken/unimplemented or off-season event
+        // quests). Reject cleanly with an error so the client's quest-offer cutscene dismisses instead of
+        // freezing. GM force-adds (forcibly) bypass this.
+        if (!forcibly && AppConfiguration.Instance.World?.DisabledQuestIds?.Contains(questId) == true)
+        {
+            Logger.Info($"Quest start blocked for {Owner.Name} ({Owner.Id}): quest {questId} is disabled");
+            Owner.SendErrorMessage(ErrorMessageType.QuestDailyLimit);
+            return false;
+        }
+
         if (ActiveQuests.ContainsKey(questId))
         {
             if (forcibly)
@@ -80,6 +90,10 @@ public class CharacterQuests
             else
             {
                 Logger.Info($"Quest start rejected for {Owner.Name} ({Owner.Id}), quest {questId}: duplicate active quest");
+                // The client opens a full-screen quest-offer cutscene and disables its buttons until the server
+                // confirms the start. If we just return without replying, the player is frozen in the offer with
+                // no way to close it (X / Esc / Back all dead). Send an error so the client dismisses the cutscene.
+                Owner.SendErrorMessage(ErrorMessageType.AlreadyRequested);
                 return false;
             }
         }
@@ -99,7 +113,11 @@ public class CharacterQuests
             {
                 Logger.Info($"Quest start rejected for {Owner.Name} ({Owner.Id}), quest {questId}: start component requirements failed, componentId {questComponentTemplate.Id}");
                 if (!forcibly)
+                {
+                    // Dismiss the client's quest-offer cutscene so it doesn't hang waiting for a start confirmation.
+                    Owner.SendErrorMessage(ErrorMessageType.AlreadyRequested);
                     return false;
+                }
             }
         }
 
@@ -563,6 +581,15 @@ public class CharacterQuests
                 {
                     var questId = reader.GetUInt32("id");
                     var templateId = reader.GetUInt32("template_id");
+
+                    // Don't load quests that have been disabled (broken/unimplemented or off-season event
+                    // quests). A player who already holds one would otherwise be stuck trying to turn it in
+                    // (the client soft-locks). Skipping the load removes it from their active log on relog.
+                    if (AppConfiguration.Instance.World?.DisabledQuestIds?.Contains(templateId) == true)
+                    {
+                        Logger.Info($"Skipping load of disabled quest {templateId} for {Owner.Name} ({Owner.Id})");
+                        continue;
+                    }
                     
                     var template = QuestManager.Instance.GetTemplate(templateId);
                     if (template == null)

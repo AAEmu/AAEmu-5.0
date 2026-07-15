@@ -94,6 +94,21 @@ public class CharacterMates
 
         var mateDbInfo = GetMateDbInfo(skillData.ItemId) ?? CreateNewMate(skillData.ItemId, template);
 
+        // Mate death / revive cooldown: a dead mate cannot be summoned until its timer expires
+        if (mateDbInfo.Hp <= 0)
+        {
+            if (mateDbInfo.ReviveTime.HasValue && DateTime.UtcNow < mateDbInfo.ReviveTime.Value)
+            {
+                Owner.SendErrorMessage(ErrorMessageType.MateCannotMountBlocked);
+                return;
+            }
+
+            // Cooldown elapsed (or none recorded) -> free auto-resurrect at full HP/MP
+            mateDbInfo.Hp = 9999;
+            mateDbInfo.Mp = 9999;
+            mateDbInfo.ReviveTime = null;
+        }
+
         var mount = new Units.Mate();
         mount.ObjId = objId;
         mount.TlId = tlId;
@@ -217,6 +232,10 @@ public class CharacterMates
             mateDbInfo.Mileage = mateInfo.Mileage;
             mateDbInfo.Name = mateInfo.Name;
             mateDbInfo.UpdatedAt = DateTime.UtcNow;
+
+            // If the mate is being despawned because it died, start the 5 minute revive cooldown
+            if (mateInfo.Hp <= 0 && !mateDbInfo.ReviveTime.HasValue)
+                mateDbInfo.ReviveTime = DateTime.UtcNow.AddMinutes(5);
         }
         MateManager.Instance.RemoveActiveMateAndDespawn(Owner, mateInfo);
     }
@@ -244,6 +263,14 @@ public class CharacterMates
                 UpdatedAt = reader.GetDateTime("updated_at"),
                 CreatedAt = reader.GetDateTime("created_at")
             };
+            // revive_time was added later; read defensively so un-migrated DBs still load
+            try
+            {
+                var ordinal = reader.GetOrdinal("revive_time");
+                if (!reader.IsDBNull(ordinal))
+                    template.ReviveTime = reader.GetDateTime(ordinal);
+            }
+            catch (IndexOutOfRangeException) { /* column not present on this DB */ }
             _mates.Add(template.ItemId, template);
         }
     }
@@ -270,8 +297,8 @@ public class CharacterMates
             command.Transaction = transaction;
 
             command.CommandText =
-                "REPLACE INTO mates(`id`,`item_id`,`name`,`xp`,`level`,`mileage`,`hp`,`mp`,`owner`,`updated_at`,`created_at`) " +
-                "VALUES (@id, @item_id, @name, @xp, @level, @mileage, @hp, @mp, @owner, @updated_at, @created_at)";
+                "REPLACE INTO mates(`id`,`item_id`,`name`,`xp`,`level`,`mileage`,`hp`,`mp`,`owner`,`updated_at`,`created_at`,`revive_time`) " +
+                "VALUES (@id, @item_id, @name, @xp, @level, @mileage, @hp, @mp, @owner, @updated_at, @created_at, @revive_time)";
             command.Parameters.AddWithValue("@id", value.Id);
             command.Parameters.AddWithValue("@item_id", value.ItemId);
             command.Parameters.AddWithValue("@name", value.Name);
@@ -283,8 +310,39 @@ public class CharacterMates
             command.Parameters.AddWithValue("@owner", value.Owner);
             command.Parameters.AddWithValue("@updated_at", value.UpdatedAt);
             command.Parameters.AddWithValue("@created_at", value.CreatedAt);
+            command.Parameters.AddWithValue("@revive_time", value.ReviveTime.HasValue ? value.ReviveTime.Value : (object)DBNull.Value);
             command.ExecuteNonQuery();
         }
+    }
+
+    /// <summary>
+    /// Returns the first dead (Hp &lt;= 0) mate this character owns, or null if none are dead.
+    /// </summary>
+    public MateDb GetDeadMate()
+    {
+        foreach (var (_, mate) in _mates)
+        {
+            if (mate.Hp <= 0)
+                return mate;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Revives the character's dead mate (used by the HealPet special effect / pet-heal items).
+    /// Clears the death cooldown and restores HP/MP. Returns true if a dead mate was revived.
+    /// </summary>
+    public bool ReviveDeadMate()
+    {
+        var deadMate = GetDeadMate();
+        if (deadMate == null)
+            return false;
+
+        deadMate.Hp = 9999; // capped to MaxHp on next summon
+        deadMate.Mp = 9999;
+        deadMate.ReviveTime = null;
+        deadMate.UpdatedAt = DateTime.UtcNow;
+        return true;
     }
 }
 
@@ -301,4 +359,5 @@ public class MateDb
     public uint Owner { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime? ReviveTime { get; set; } // when a dead mate becomes available again (death cooldown)
 }

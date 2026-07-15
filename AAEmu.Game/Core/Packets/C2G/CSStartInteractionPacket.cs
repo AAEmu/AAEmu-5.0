@@ -46,7 +46,10 @@ public class CSStartInteractionPacket : GamePacket
             else if (npc.Template.Auctioneer)
                 option = SkillsEnum.UseAuctioneer; // Open Auctioneer
             else if (npc.Template.Priest)
-                option = SkillsEnum.Blessing; // Open Recover-Exp dialog ?
+                // If the player has a dead pet, offer to revive it; otherwise the normal exp-recovery blessing
+                option = Connection.ActiveChar.Mates.GetDeadMate() != null
+                    ? SkillsEnum.HealPetSWounds // Open Pet Recovery dialog
+                    : SkillsEnum.Blessing; // Open Recover-Exp dialog ?
             else if (npc.Template.Repairman)
                 option = SkillsEnum.Repair; // Open Repair dialog ?
             else if (npc.Template.Merchant)

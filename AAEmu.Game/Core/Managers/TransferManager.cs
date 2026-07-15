@@ -538,6 +538,15 @@ public class TransferManager : Singleton<TransferManager>
                                     // конвертируем координаты из локальных в мировые, сразу при считывании из файла пути
                                     // convert coordinates from local to world, immediately when reading the path from the file
                                     var vec = ZoneManager.ConvertToWorldCoordinates(zoneId, xyz);
+                                    // Apply the per-path cell offset. The Pos values in transfer_path.xml are
+                                    // relative to the path's own cell (the cellX/cellY attributes on the <Transfer>
+                                    // node), not the zone origin. ConvertToWorldCoordinates only adds the zone
+                                    // origin, so without this every transfer was offset by (cellX,cellY)*1024 -
+                                    // dropping ships onto the wrong terrain (flying / clipping / stuck in towns).
+                                    // (Quest spheres don't need this: their .g files carry no cell attributes and
+                                    // are already zone-origin-relative.)
+                                    vec.X += transferRoad.CellX * 1024f;
+                                    vec.Y += transferRoad.CellY * 1024f;
                                     var pos = new WorldSpawnPosition()
                                     {
                                         X = vec.X,

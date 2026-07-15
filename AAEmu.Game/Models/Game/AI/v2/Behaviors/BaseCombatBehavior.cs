@@ -421,8 +421,17 @@ public abstract class BaseCombatBehavior : Behavior
             if (Ai.Owner.CurrentTarget == null)
                 return true;
 
-            var distanceToTarget = Vector3.Distance(Ai.Owner.Transform.World.Position, Ai.Owner.CurrentTarget.Transform.World.Position);
-            var distanceToIdlePosition = Vector3.Distance(Ai.Owner.Transform.World.Position, Ai.IdlePosition);
+            // Horizontal (2D) leash distance. Cave/indoor NPCs can have an IdlePosition Z
+            // resolved to the surface terrain above the cave (no cave-floor geodata), so a 3D
+            // distance reads tens of metres "from home" while the NPC stands on the cave floor —
+            // instantly leashing it out of combat the moment it is attacked (exposed once
+            // npc-cave-float-clamp stopped them floating up toward that surface home Z). The leash
+            // cares about horizontal wander, so ignore Z.
+            var ownerPos = Ai.Owner.Transform.World.Position;
+            var targetPos = Ai.Owner.CurrentTarget.Transform.World.Position;
+            var idlePos = Ai.IdlePosition;
+            var distanceToTarget = Vector2.Distance(new Vector2(ownerPos.X, ownerPos.Y), new Vector2(targetPos.X, targetPos.Y));
+            var distanceToIdlePosition = Vector2.Distance(new Vector2(ownerPos.X, ownerPos.Y), new Vector2(idlePos.X, idlePos.Y));
 
             return (distanceToTarget > returnDistance || distanceToIdlePosition > returnDistance)
                 && distanceToIdlePosition <= absoluteReturnDistance;

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -7,6 +7,9 @@
     <UserSecretsId>426ad5c3-9a72-44e9-88f5-4b5940b98c28</UserSecretsId>
     <ApplicationIcon>Resources\icon_game.ico</ApplicationIcon>
     <Copyright>Copyright (c) 2019 - 2025 the AAEmu contributors</Copyright>
+    <!-- Server GC: parallelize GC across cores -> short pauses (fixes ~100ms tick stalls / scenery surge on the 3.3GB-LOH 5.0 heap). 2026-06-16 -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>

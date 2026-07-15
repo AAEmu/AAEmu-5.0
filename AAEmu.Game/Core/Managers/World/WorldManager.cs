@@ -650,7 +650,13 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
 
         if (!world.ValidRegion(sx, sy))
         {
-            Logger.Fatal($"GetZoneId(): Coordinates out of bounds for WorldId {worldId} - x:{x:#,0.#} - y: {y:#,0.#}");
+            // Throttled: a runaway unit can hit this many times per second; un-throttled it floods the log
+            // (NLog queue growth) and was a contributor to the out-of-memory crash.
+            if ((DateTime.UtcNow - _lastOutOfBoundsLog).TotalSeconds >= 5.0)
+            {
+                _lastOutOfBoundsLog = DateTime.UtcNow;
+                Logger.Warn($"GetZoneId(): Coordinates out of bounds for WorldId {worldId} - x:{x:#,0.#} - y: {y:#,0.#} (further out-of-bounds messages throttled for 5s)");
+            }
             return 0;
         }
 
@@ -1407,6 +1413,23 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         return world != null && world.ValidRegion(x, y);
     }
 
+    private static DateTime _lastOutOfBoundsLog = DateTime.MinValue;
+
+    /// <summary>
+    /// Returns true if the given world-space (x,y) falls inside a valid region of the specified world.
+    /// Used by the movement handler to reject runaway/out-of-bounds positions before they flood region
+    /// streaming and visibility churn (which can OOM the server).
+    /// </summary>
+    public bool IsPositionValidForWorld(uint worldId, float x, float y)
+    {
+        var world = GetWorld(worldId);
+        if (world == null)
+            return false;
+        var sx = (int)Math.Floor(x / REGION_SIZE);
+        var sy = (int)Math.Floor(y / REGION_SIZE);
+        return world.ValidRegion(sx, sy);
+    }
+
     public void OnPlayerJoin(Character character)
     {
         //turn snow on off 
@@ -1677,6 +1700,12 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         if (Math.Abs(worldHeight - position.Z) <= 0.5f)
             return;
 
+        // Sanity guard: reject glitch samples (falls, teleports, zone-transitions, mounted-too-high).
+        // A real walkable floor can be far BELOW the terrain heightmap (caves) but is never far ABOVE
+        // it; anything >100m over the surface is not a floor. Keeps recorded geodata clean at source.
+        if (worldHeight != 0f && clientZ - worldHeight > 100f)
+            return;
+
         // Создаем равносторонний треугольник вокруг точки
         const float radius = 0.5f; // Радиус описанной окружности
         const float angleStep = MathF.PI * 2f / 3f; // 120 градусов между вершинами
@@ -1716,17 +1745,67 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
     /// <returns>Computed Z or float.NaN if not found.</returns>
     public float GetCorrectNpcHeight(uint zoneId, float x, float y, float z)
     {
-        // Search for triangles near this point
-        var nearbyTriangles = _navMeshCollector.GetTrianglesInRadius(zoneId, new Vector3(x, y, z), 2.0f);
+        // Search for recorded floor triangles near this point
+        var nearbyTriangles = _navMeshCollector.GetTrianglesInRadius(zoneId, new Vector3(x, y, z), 3.0f);
+
+        NavMeshTriangle nearest = null;
+        var nearestDist2D = float.PositiveInfinity;
+
         foreach (var triangle in nearbyTriangles)
         {
+            // Best case: the point is inside this triangle's footprint -> interpolate exactly.
             if (IsPointInTriangle2D(new Vector2(x, y), triangle))
             {
                 return InterpolateZFromTriangle(triangle, x, y);
             }
+
+            // Otherwise track the closest triangle (by 2D centroid) as a forgiving fallback.
+            var cx = (triangle.A.X + triangle.B.X + triangle.C.X) / 3f;
+            var cy = (triangle.A.Y + triangle.B.Y + triangle.C.Y) / 3f;
+            var d2 = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+            if (d2 < nearestDist2D)
+            {
+                nearestDist2D = d2;
+                nearest = triangle;
+            }
+        }
+
+        // Forgiving fallback: no triangle strictly contains the point, but a recorded floor
+        // sample is nearby. Use its height instead of returning NaN (which would drop the NPC to
+        // the surface heightmap above a cave). This lets sparse walking cover a whole area. Only
+        // accept it when its Z is plausibly the same floor level as the NPC's reference Z, so we
+        // never grab a sample from a different level / overhang.
+        if (nearest != null)
+        {
+            var nearestZ = (nearest.A.Z + nearest.B.Z + nearest.C.Z) / 3f;
+            var sameLevelTol = AppConfiguration.Instance.World?.SpawnHeight?.MaxGroundRise ?? 8.0f;
+            if (z == 0f || sameLevelTol <= 0f || MathF.Abs(nearestZ - z) <= sameLevelTol)
+                return nearestZ;
         }
 
         return float.NaN; // Not found
+    }
+
+    /// <summary>
+    /// Nearest recorded navmesh floor at (x,y) within 3m (2D, level-agnostic — no same-Z guard).
+    /// Used to ground idle/holding NPCs onto a recorded cave floor beneath a floating spawn Z.
+    /// Returns NaN when nothing was recorded near this point.
+    /// </summary>
+    public float GetNearestNavFloor(uint zoneId, float x, float y)
+    {
+        var tris = _navMeshCollector.GetTrianglesInRadius(zoneId, new Vector3(x, y, 0f), 3.0f);
+        NavMeshTriangle nearest = null;
+        var best = float.PositiveInfinity;
+        foreach (var t in tris)
+        {
+            if (IsPointInTriangle2D(new Vector2(x, y), t))
+                return InterpolateZFromTriangle(t, x, y);
+            var cx = (t.A.X + t.B.X + t.C.X) / 3f;
+            var cy = (t.A.Y + t.B.Y + t.C.Y) / 3f;
+            var d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+            if (d < best) { best = d; nearest = t; }
+        }
+        return nearest != null ? (nearest.A.Z + nearest.B.Z + nearest.C.Z) / 3f : float.NaN;
     }
 
     /// <summary>

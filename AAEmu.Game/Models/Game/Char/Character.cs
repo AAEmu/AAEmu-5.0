@@ -1304,6 +1304,65 @@ public partial class Character : Unit, ICharacter
         }
     }
 
+    /// <summary>
+    /// Applies the on-death penalty (experience + equipment durability loss) for characters above
+    /// level 15. Severity scales with level, reaching its maximum at level 50.
+    /// Exp loss is recoverable (RecoverableExp) at a Nui statue and never causes a de-level.
+    /// Outputs the figures to report to the client in SCUnitDeathPacket.
+    /// </summary>
+    public void ApplyDeathPenalty(out int lostExp, out byte durabilityLossRatio)
+    {
+        lostExp = 0;
+        durabilityLossRatio = 0;
+
+        // No death penalty at or below level 15
+        if (Level <= 15)
+            return;
+
+        // 0.0 at level 15, ramping linearly to 1.0 at level 50 (capped beyond 50)
+        var scale = Math.Clamp((Level - 15) / (50f - 15f), 0f, 1f);
+
+        // --- Experience loss: 1% (lvl 16) -> 5% (lvl 50+) of the current level's exp band ---
+        var levelFloor = ExperienceManager.Instance.GetExpForLevel((byte)Level);
+        var nextLevel = ExperienceManager.Instance.GetExpForLevel((byte)(Level + 1));
+        var band = nextLevel - levelFloor;
+        if (band > 0)
+        {
+            var xpPct = 0.01f + (0.05f - 0.01f) * scale;
+            var desiredLoss = (int)(band * xpPct);
+            var newExp = Math.Max(levelFloor, Experience - desiredLoss); // never de-level
+            lostExp = Experience - newExp;
+            if (lostExp > 0)
+            {
+                Experience = newExp;
+                RecoverableExp += lostExp;
+                SendPacket(new SCExpChangedPacket(ObjId, -lostExp, false));
+            }
+        }
+
+        // --- Durability loss: 1% (lvl 16) -> 4% (lvl 50+) of each equipped item's max durability ---
+        var durPct = 0.01f + (0.04f - 0.01f) * scale;
+        durabilityLossRatio = (byte)Math.Round(durPct * 100f); // reported to the client (1..4)
+        var changed = new List<ItemTask>();
+        foreach (var item in Equipment.Items)
+        {
+            if (item is not EquipItem equip)
+                continue;
+            if (equip.MaxDurability <= 0 || equip.Durability <= 0)
+                continue;
+
+            var loss = Math.Max(1, (int)(equip.MaxDurability * durPct));
+            var newDur = (byte)Math.Max(0, equip.Durability - loss);
+            if (newDur != equip.Durability)
+            {
+                equip.Durability = newDur;
+                changed.Add(new ItemUpdate(equip));
+            }
+        }
+        if (changed.Count > 0)
+            SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.DurabilityLoss, changed, []));
+    }
+
     public void CheckHeirLevelUp()
     {
         var needExp = ExperienceManager.Instance.GetExpForHeirLevel(HeirLevel);

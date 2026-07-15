@@ -661,6 +661,7 @@ CREATE TABLE `mates`  (
   `owner` int UNSIGNED NOT NULL,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `revive_time` datetime NULL DEFAULT NULL,
   PRIMARY KEY (`id`, `item_id`, `owner`) USING BTREE
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'Player mounts and pets' ROW_FORMAT = Dynamic;
 

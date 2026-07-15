@@ -4,6 +4,7 @@ using System.Numerics;
 
 using AAEmu.Commons.Utils;
 using AAEmu.Game.GameData.Framework;
+using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Quests;
@@ -42,6 +43,11 @@ public class UnitRequirementsGameData : Singleton<UnitRequirementsGameData>, IGa
         _unitReqs = new();
         _unitReqsByOwnerType = new();
 
+        // Set of gathering/harvesting/mining skills, used to apply WorldConfig.GatheringMinLevel below.
+        var gatheringSkillIds = LoadGatheringSkillIds(connection);
+        var gatheringMinLevel = (uint)System.Math.Max(1, AppConfiguration.Instance.World?.GatheringMinLevel ?? 1);
+        var gatheringClampCount = 0;
+
         #region Tables
 
         using var command = connection.CreateCommand();
@@ -61,6 +67,15 @@ public class UnitRequirementsGameData : Singleton<UnitRequirementsGameData>, IGa
             t.Value1 = reader.GetUInt32("value1");
             t.Value2 = reader.GetUInt32("value2");
 
+            // Clamp the level requirement of gathering skills down to the configured minimum (WorldConfig.GatheringMinLevel).
+            // Only lowers requirements (never raises them) and only touches gathering/harvesting/mining skills.
+            if (t.OwnerType == "Skill" && t.KindType == UnitReqsKindType.Level &&
+                t.Value1 > gatheringMinLevel && gatheringSkillIds.Contains(t.OwnerId))
+            {
+                t.Value1 = gatheringMinLevel;
+                gatheringClampCount++;
+            }
+
             _unitReqs.TryAdd(t.Id, t);
             if (!_unitReqsByOwnerType.ContainsKey(t.OwnerType))
                 _unitReqsByOwnerType.TryAdd(t.OwnerType, new List<UnitReqs>());
@@ -68,6 +83,59 @@ public class UnitRequirementsGameData : Singleton<UnitRequirementsGameData>, IGa
             indx++;
         }
         #endregion
+
+        if (gatheringClampCount > 0)
+            Logger.Info("GatheringMinLevel={0}: clamped level requirement on {1} gathering skill(s).", gatheringMinLevel, gatheringClampCount);
+    }
+
+    /// <summary>
+    /// Returns the set of skill ids that perform a gathering/harvesting/mining world-interaction
+    /// (Collect / Mine / Harvest / Pick / SkinOff / Mow / MachinePartsCollect). Used to scope the
+    /// WorldConfig.GatheringMinLevel override so it only affects gathering skills.
+    /// </summary>
+    private static HashSet<uint> LoadGatheringSkillIds(SqliteConnection connection)
+    {
+        // World-interaction type ids (see WorldInteractionType enum) that represent gathering activities.
+        var gatherWorldInteractions = new HashSet<long>
+        {
+            33,  // Mow
+            67,  // SkinOff
+            68,  // CrystalCollect
+            69,  // TreeproductCollect
+            70,  // DairyCollect
+            71,  // Catch
+            72,  // FiberCollect
+            73,  // OreMine
+            74,  // RockMine
+            75,  // MedicalingredientMine
+            76,  // FruitPick
+            77,  // DyeingredientCollect
+            78,  // CropHarvest
+            79,  // SeedCollect
+            80,  // CerealHarvest
+            81,  // SoilCollect
+            82,  // SpiceCollect
+            83,  // PlantCollect
+            91   // MachinePartsCollect
+        };
+
+        var result = new HashSet<uint>();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT DISTINCT se.skill_id, ie.wi_id " +
+            "FROM skill_effects se " +
+            "JOIN effects e ON e.id = se.effect_id AND e.actual_type = 'InteractionEffect' " +
+            "JOIN interaction_effects ie ON ie.id = e.actual_id";
+        command.Prepare();
+        using var sqliteReader = command.ExecuteReader();
+        while (sqliteReader.Read())
+        {
+            var wiId = sqliteReader.GetInt64(1);
+            if (gatherWorldInteractions.Contains(wiId))
+                result.Add((uint)sqliteReader.GetInt64(0));
+        }
+
+        return result;
     }
 
     public void PostLoad()

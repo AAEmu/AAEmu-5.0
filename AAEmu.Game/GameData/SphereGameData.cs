@@ -340,6 +340,26 @@ public class SphereGameData : Singleton<SphereGameData>, IGameDataLoader
     /// <returns>SphereQuest that was hit, null if none found</returns>
     public SphereQuest IsInsideAreaSphere(uint sphereId, uint value2, Vector3 worldPosition, uint requiredComponentId = 0)
     {
+        // Primary path: match the quest-sphere geometry (client .g files) directly by the player's
+        // active quest ComponentId. The static sphere_quests table's quest_id mapping is stale in this
+        // dataset (826 of 1229 rows point at quest ids that are absent from the client .g files, e.g.
+        // sphere 1448 "Location of Sealstone" maps to quest 4280 but the .g tags it as quest 3889),
+        // which broke main-story "use item in this sphere" steps for everyone. The .g ComponentId
+        // values DO match the DB quest_components, so the component is the reliable join key.
+        if (requiredComponentId != 0)
+        {
+            var spheresByComponent = SphereQuestManager.Instance.GetQuestSpheres(requiredComponentId);
+            if (spheresByComponent != null)
+            {
+                foreach (var pakDataSphere in spheresByComponent)
+                {
+                    if (pakDataSphere.Contains(worldPosition))
+                        return pakDataSphere;
+                }
+            }
+        }
+
+        // Fallback: original sphere -> sphere_quest -> quest geometry lookup
         if (!_spheres.TryGetValue(sphereId, out var dbSphere))
             return null;
 

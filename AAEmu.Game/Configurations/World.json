@@ -1,4 +1,4 @@
-{
+﻿{
     "World": {
         "MOTD": "Welcome to AAEmu!",
         "LogoutMessage": "Hope to see you soon.",
@@ -29,6 +29,7 @@
             "MaxDownwardSnapDistance": 0.5,
             "SpawnHomeXyRadius": 3.0,
             "SpawnHomeBlendBand": 4.0,
+            "MaxGroundRise": 8.0,
             "PreferHeightmapForGroundZ": true,
             "LogResolution": false,
             "UseLegacyBai3DLookup": false,

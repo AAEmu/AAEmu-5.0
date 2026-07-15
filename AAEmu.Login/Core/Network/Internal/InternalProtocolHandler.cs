@@ -126,6 +126,6 @@ public class InternalProtocolHandler : BaseProtocolHandler
         var dump = new StringBuilder();
         for (var i = stream.Pos; i < stream.Count; i++)
             dump.AppendFormat("{0:x2} ", stream.Buffer[i]);
-        Logger.Error("Unknown packet 0x{0:x2} from {1}:\n{2}", type, session.Ip, dump);
+        Logger.Debug("Unknown packet 0x{0:x2} from {1}:\n{2}", type, session.Ip, dump);
     }
 }

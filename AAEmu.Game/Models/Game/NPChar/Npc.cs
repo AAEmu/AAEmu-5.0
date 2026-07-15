@@ -1253,7 +1253,12 @@ public partial class Npc : Unit
         Transform.Local.SetPosition(newX, newY, newZ);
         // TODO to take the point we're moving to
         var targetPosition = NpcSpawner.AdjustMovePosition(this);
-        targetPosition.Z = GetReferenceHeight(targetPosition.X, targetPosition.Y, targetPosition.Z, Transform.ZoneId);
+        // Anchor the height lookup to the NPC's CURRENT (floor) Z, not the Z interpolated toward
+        // the move target. Roaming/return targets can sit at the surface above a cave; using
+        // the climbing interpolated Z as the reference made the navmesh same-level tolerance
+        // reject the floor and the NPC fly up to that surface target. Current-Z keeps it grounded.
+        targetPosition.Z = GetReferenceHeight(targetPosition.X, targetPosition.Y, currentPosition.Z, Transform.ZoneId);
+
         Transform.Local.SetPosition(targetPosition);
 
         var angle = MathUtil.CalculateAngleFrom(targetPosition, other);

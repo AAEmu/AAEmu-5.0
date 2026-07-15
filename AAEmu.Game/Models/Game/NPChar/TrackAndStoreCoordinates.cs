@@ -95,7 +95,7 @@ public partial class Npc
         {
             case HoldPositionBehavior:
             case IdleBehavior:
-                finalHeight = Spawner.Position.Z;
+                finalHeight = GroundedSpawnZ(zoneId);
                 return finalHeight;
         }
 
@@ -126,8 +126,7 @@ public partial class Npc
 
                 if (dist <= homeRadius)
                 {
-                    // Fully home: trust the resolver-chosen spawn Z.
-                    return spawner.Position.Z;
+                    return GroundedSpawnZ(zoneId);
                 }
 
                 if (blendBand > 0f && dist <= homeRadius + blendBand)
@@ -164,6 +163,18 @@ public partial class Npc
     #endregion
 
     #region Private Implementation
+
+    private float GroundedSpawnZ(uint zoneId)
+    {
+        var spawner = Spawner;
+        if (spawner == null)
+            return Transform.World.Position.Z;
+        var spawnZ = spawner.Position.Z;
+        var navFloorZ = WorldManager.Instance.GetNearestNavFloor(zoneId, spawner.Position.X, spawner.Position.Y);
+        if (!float.IsNaN(navFloorZ) && navFloorZ < spawnZ - 1f)
+            return navFloorZ;
+        return spawnZ;
+    }
 
     internal float AdjustNpcFloor(float candidate, float? minZ = null, float? maxZ = null)
     {

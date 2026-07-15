@@ -421,6 +421,20 @@ public class CSStartSkillPacket : GamePacket
 
         var skill = new Skill(template);
         var result = skill.Use(player, request.SkillCaster, request.SkillCastTarget, request.SkillObject, false, out var errorValue);
+
+        // Basic combat attacks (2 = melee, 3 = offhand, 4 = ranged) auto-repeat server-side:
+        // start the repeat task so the player keeps swinging until the target dies / leaves
+        // range / combat ends, instead of re-clicking each swing. StartAutoSkill is a no-op if
+        // a task is already running, so re-clicks while attacking are absorbed (ResolveExecutionMode
+        // then routes them to SkillExecutionMode.AutoAttack).
+        if (result == SkillResult.Success
+            && (request.SkillId == 2 || request.SkillId == 3 || request.SkillId == 4)
+            && request.SkillCaster.ObjId == player.ObjId)
+        {
+            player.IsAutoAttack = true;
+            player.StartAutoSkill(skill);
+        }
+
         return result == SkillResult.Success
             ? SkillExecutionResult.Success(skill)
             : SkillExecutionResult.Error(result, errorValue, skill);

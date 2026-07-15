@@ -104,8 +104,19 @@ public class NpcSpawnerNpc : Spawner<Npc>
         {
             var spawnPos = npc.Transform.World.Position;
             var resolution = NpcHeightResolver.ResolveSpawnHeightResolution(npc, spawnPos, spawnWorld);
-            if (resolution.Height > 0f && MathF.Abs(resolution.Height - spawnPos.Z) > 0.01f)
-                npc.Transform.Local.SetPosition(spawnPos.X, spawnPos.Y, resolution.Height);
+            var finalSpawnZ = resolution.Height;
+
+            // Recorded-navmesh override (ground truth): if a player physically walked a floor at
+            // this XY (/sg recording), trust it over the conservative spawn-snap guards, which
+            // otherwise keep cave NPCs floating at a surface-resolved spawn Z. Only snaps DOWN, so
+            // legitimately-elevated NPCs (no recorded floor beneath them) are untouched. This also
+            // grounds HomePosition/IdlePosition below, fixing idle floaters.
+            var navFloorZ = WorldManager.Instance.GetNearestNavFloor(npc.Transform.ZoneId, spawnPos.X, spawnPos.Y);
+            if (!float.IsNaN(navFloorZ) && navFloorZ < spawnPos.Z - 1f)
+                finalSpawnZ = navFloorZ;
+
+            if (finalSpawnZ > 0f && MathF.Abs(finalSpawnZ - spawnPos.Z) > 0.01f)
+                npc.Transform.Local.SetPosition(spawnPos.X, spawnPos.Y, finalSpawnZ);
         }
 
         if (npc.Ai != null)

@@ -20,7 +20,14 @@ public class HealPet : SpecialEffectAction
         int value3,
         int value4, int value5, int value6, int value7)
     {
-        // TODO ...
-        if (caster is Character) { Logger.Debug("Special effects: HealPet value1 {0}, value2 {1}, value3 {2}, value4 {3}", value1, value2, value3, value4); }
+        if (caster is Character character)
+        {
+            Logger.Debug("Special effects: HealPet value1 {0}, value2 {1}, value3 {2}, value4 {3}", value1, value2, value3, value4);
+
+            // Revive the player's dead pet if they have one (pet-heal potions / NPC pet recovery).
+            // The despawned MateDb has no stored max HP/MP, so we restore to full and let SpawnMount cap it.
+            if (character.Mates.ReviveDeadMate())
+                character.SendErrorMessage(ErrorMessageType.MateResurrected);
+        }
     }
 }

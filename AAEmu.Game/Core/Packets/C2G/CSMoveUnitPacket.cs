@@ -16,6 +16,7 @@ using AAEmu.Game.Models.Game.Skills.Buffs;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.Movements;
 using AAEmu.Game.Models.Game.Units.slaves;
+using AAEmu.Game.Models.Game.Teleport;
 using AAEmu.Game.Models.Game.Units.Static;
 using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Models.StaticValues;
@@ -91,7 +92,29 @@ public class CSMoveUnitPacket : GamePacket
         {
             // TODO по какой то причине объект удалили из региона, наверное нужно его как то вернуть назад 
             // TODO for some reason the object has been removed from the region, you probably need to get it back somehow
-            Logger.Warn("Invalid target {0} from {1}", _objId, character.Name);
+            // The vehicle we're sending input for no longer exists in the world (orphaned out from under
+            // the rider - a slave via Parent, OR a carriage/transfer via StickyParent). Without recovery the
+            // client keeps streaming input to a ghost object, leaving the player stuck / not moving with it
+            // and frequently drowning. If we're attached to anything, force-dismount (clears Parent AND
+            // StickyParent) and despawn any orphaned owned slave so the player is freed instead of stuck.
+            // The unit we're sending input for no longer exists server-side: an orphaned slave/transfer, OR a
+            // desynced mount (e.g. a mount that attacked an immortal quest giver) that the server dropped while
+            // the client kept controlling it. The client then floods input to the ghost object and the player is
+            // left fully input-locked (no move/Esc/menus) until relog. Recover here even when NOT currently
+            // attached (the mount removal may already have cleared Parent), and resync the client so it re-anchors
+            // to the player character. Throttled so the flood of invalid moves doesn't spam dismounts/teleports.
+            if ((_objId != character.ObjId) && StuckRecoveryThrottle(character))
+            {
+                var wasAttached = character.Transform.Parent != null || character.Transform.StickyParent != null;
+                Logger.Warn("Invalid target {0} from {1} (attached={2}) - recovering stuck player (dismount + resync)", _objId, character.Name, wasAttached);
+                character.ForceDismount();
+                SlaveManager.Instance.RemoveAndDespawnAllActiveOwnedSlaves(character);
+                // Self-teleport to current position to drop the client's ghost-control state and clear the input
+                // lock (mirrors the /teleport flow; the client's CSTeleportEnded then resets DisabledSetPosition).
+                var recoverPos = character.Transform.World.Position;
+                character.DisabledSetPosition = true;
+                character.SendPacket(new SCTeleportUnitPacket(TeleportReason.Portal, ErrorMessageType.NoErrorMessage, recoverPos.X, recoverPos.Y, recoverPos.Z, 0));
+            }
             return;
         }
 
@@ -133,6 +156,21 @@ public class CSMoveUnitPacket : GamePacket
 
                     if (targetUnit is not Slave car)
                         return;
+
+                    // Out-of-bounds guard: a glitched vehicle client (e.g. Cogwheel Longboard / cart physics)
+                    // can stream positions that leave the valid world region. The vehicle is the root object and
+                    // the driver is parented to it, so accepting these drags the player into the void, flooding
+                    // region/visibility churn and OOM-ing the whole server. Reject the move and free the rider.
+                    if (car.Transform.Parent == null &&
+                        !WorldManager.Instance.IsPositionValidForWorld(car.Transform.WorldId, vmt.X, vmt.Y))
+                    {
+                        if (OutOfBoundsThrottle(character))
+                            Logger.Warn("Rejecting out-of-bounds vehicle move from {0} (slave {1}) @ x{2:F1} y{3:F1} - dismounting + despawning runaway vehicle",
+                                character.Name, car.ObjId, vmt.X, vmt.Y);
+                        character.ForceDismount();
+                        SlaveManager.Instance.RemoveAndDespawnAllActiveOwnedSlaves(character);
+                        return;
+                    }
 
                     // TODO: Validate if targetUnit is a "car"
 
@@ -293,6 +331,17 @@ public class CSMoveUnitPacket : GamePacket
                         // Just forward it to the packet, not safe for exploits/hacking
                     }
 
+                    // Out-of-bounds guard: reject moves that would put a root (un-parented) unit outside the
+                    // valid world region. Prevents runaway physics / dragged riders / exploit positions from
+                    // flooding region streaming and OOM-ing the server. Parented units use relative coords, skip.
+                    if (targetUnit.Transform.Parent == null &&
+                        !WorldManager.Instance.IsPositionValidForWorld(targetUnit.Transform.WorldId, dmt.X, dmt.Y))
+                    {
+                        if ((targetUnit is Character oobChar) && OutOfBoundsThrottle(oobChar))
+                            Logger.Warn("Rejecting out-of-bounds move from {0} @ x{1:F1} y{2:F1}", oobChar.Name, dmt.X, dmt.Y);
+                        return;
+                    }
+
                     // Actually update the position
                     targetUnit.Transform.Local.SetPosition(dmt.X, dmt.Y, dmt.Z,
                         (float)MathUtil.ConvertDirectionToRadian(dmt.RotationX),
@@ -318,6 +367,46 @@ public class CSMoveUnitPacket : GamePacket
         }
 
         CleanupProximityCache(); // to clean up caches
+    }
+
+    private static readonly Dictionary<uint, long> _oobLogThrottle = new();
+
+    /// <summary>
+    /// Returns true at most once per 5s per character, so out-of-bounds rejection logging from a
+    /// runaway client cannot itself flood the log.
+    /// </summary>
+    private static bool OutOfBoundsThrottle(Character character)
+    {
+        if (character == null)
+            return false;
+        var now = Environment.TickCount64;
+        lock (_oobLogThrottle)
+        {
+            if (_oobLogThrottle.TryGetValue(character.Id, out var last) && now - last < 5000)
+                return false;
+            _oobLogThrottle[character.Id] = now;
+            return true;
+        }
+    }
+
+    private static readonly Dictionary<uint, long> _stuckRecoverThrottle = new();
+
+    /// <summary>
+    /// Returns true at most once per 5s per character, so stuck-player recovery (dismount + self-teleport)
+    /// fires once on an invalid-target flood instead of every packet.
+    /// </summary>
+    private static bool StuckRecoveryThrottle(Character character)
+    {
+        if (character == null)
+            return false;
+        var now = Environment.TickCount64;
+        lock (_stuckRecoverThrottle)
+        {
+            if (_stuckRecoverThrottle.TryGetValue(character.Id, out var last) && now - last < 5000)
+                return false;
+            _stuckRecoverThrottle[character.Id] = now;
+            return true;
+        }
     }
 
     private static void RemoveEffects(BaseUnit unit, MoveType moveType)

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // ФАЙЛ: NpcPathfindingImproved.cs
 // Локальный обход doodad и forbidden-area препятствий для NPC.
 //
@@ -1582,6 +1582,19 @@ public partial class Npc
     private float ResolveMovementHeight(Vector3 heightProbe)
     {
         var npc = Ai?.Owner;
+
+        // Recorded navmesh floor is the ground truth for cave/indoor movement.
+        if (npc != null && !npc.CanFly)
+        {
+            var navFloorZ = WorldManager.Instance.GetNearestNavFloor(npc.Transform.ZoneId, heightProbe.X, heightProbe.Y);
+            if (!float.IsNaN(navFloorZ))
+            {
+                var terrainZ = ParentWorld?.Template?.GetHeight(heightProbe.X, heightProbe.Y) ?? 0f;
+                if (terrainZ == 0f || navFloorZ <= terrainZ + 0.5f)
+                    return navFloorZ;
+            }
+        }
+
         var isFlying = npc != null && npc.CanFly;
         var hasAggro = npc?.CurrentAggroTarget != null;
         var heightState = npc?.Ai?.HeightState;

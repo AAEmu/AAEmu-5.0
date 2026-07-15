@@ -84,7 +84,6 @@ public class SpecialtyManager : Singleton<SpecialtyManager>
                         template.SpecialtyBundleId = reader.GetUInt32("specialty_bundle_id");
                         template.Profit = reader.GetUInt32("profit");
                         template.Ratio = reader.GetInt32("ratio");
-                        _specialtyBundleItems.Add(template.Id, template);
 
                         // Проверка на дубликат в _specialtyBundleItems
                         if (!_specialtyBundleItems.ContainsKey(template.Id))

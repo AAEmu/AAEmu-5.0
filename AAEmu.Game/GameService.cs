@@ -200,6 +200,10 @@ public sealed class GameService : IHostedService, IDisposable
         ManaRegenManager.Instance.Initialize();
         PublicFarmManager.Instance.Initialize();
 
+        // Pre-warm terrain cells around players on a background thread so fast vehicles
+        // don't stall the tick on synchronous WorldCell.VerifyCellLoaded() (vehicle world-streaming fix).
+        TerrainPreloadManager.Instance.Start();
+
         if ((waterBodyTask != null) && (!waterBodyTask.IsCompleted))
         {
             Logger.Info("Waiting on water to be loaded before proceeding, please wait ...");

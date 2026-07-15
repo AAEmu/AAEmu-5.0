@@ -446,8 +446,11 @@ public class SlaveManager : Singleton<SlaveManager>
 
         slave.AttachedCharacters.Add(attachPoint, character);
         character.Transform.Parent = slave.Transform;
-        // TODO: move to attach point's position
-        //character.Transform.Local.SetPosition(0, 0, 2, 0, 0, 0); // hotfix исправляем высоту, когда мы за штурвалом
+        // Reset the local (seat) offset so the occupant's world position stays locked to the vehicle.
+        // Without this, Local keeps the pre-board world position, so the occupant orbits the vehicle by
+        // ~world-distance as it rotates -> flung across the map (wrong zone, closed-zone drown, disconnect).
+        // Mirrors MateManager (mounts), which already does this and is why mounts work.
+        character.Transform.Local.SetPosition(0, 0, 0);
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-{
+﻿{
     "Id": 1,
     "AdditionalesId": [],
     "SecretKey": "test",
@@ -31,7 +31,7 @@
     "CharacterNameRegex": "^[a-zA-Z0-9а-яА-Я]{1,18}$",
     "MaxConcurencyThreadPool": 8,
     "HeightMapsEnable": true,
-    "DebugInfo": true,
+    "DebugInfo": false,
     "DebugInfoLevel": 100,
     "DefaultLanguage": "en_us"
 }

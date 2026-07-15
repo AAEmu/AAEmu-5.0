@@ -12,12 +12,16 @@ public class SCUnitDeathPacket : GamePacket
     private readonly uint _objId;
     private readonly KillReason _killReason;
     private readonly Unit _killer;
+    private readonly int _lostExp;
+    private readonly byte _durabilityLossRatio;
 
-    public SCUnitDeathPacket(uint objId, KillReason killReason, Unit killer = null) : base(SCOffsets.SCUnitDeathPacket, 5)
+    public SCUnitDeathPacket(uint objId, KillReason killReason, Unit killer = null, int lostExp = 0, byte durabilityLossRatio = 0) : base(SCOffsets.SCUnitDeathPacket, 5)
     {
         _objId = objId;
         _killReason = killReason;
         _killer = killer;
+        _lostExp = lostExp;
+        _durabilityLossRatio = durabilityLossRatio;
     }
 
     public override PacketStream Write(PacketStream stream)
@@ -35,8 +39,8 @@ public class SCUnitDeathPacket : GamePacket
             stream.Write(75000u);  // autoResurrectionWaitingTime
         }
         // ---------------
-        stream.Write(0);       // lostExp
-        stream.Write((byte)0); // deathDurabilityLossRatio
+        stream.Write(_lostExp);              // lostExp
+        stream.Write(_durabilityLossRatio);  // deathDurabilityLossRatio
         // ---------------
         if (_killReason == KillReason.Collide)
         {

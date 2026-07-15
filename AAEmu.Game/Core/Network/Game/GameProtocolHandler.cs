@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Text;
 
@@ -215,7 +215,13 @@ public class GameProtocolHandler : BaseProtocolHandler
                     }
 
                     var type = stream2.ReadUInt16();
-                    _packets[level].TryGetValue(type, out var classType);
+                    // Crash-guard: a malformed packet can carry an invalid level (e.g. 0) that is
+                    // not a key in _packets (valid: 1-6). The old _packets[level] indexer threw an
+                    // unhandled KeyNotFoundException and dropped the player's connection. Use
+                    // TryGetValue so a bad packet is routed to HandleUnknownPacket instead.
+                    Type classType = null;
+                    if (_packets.TryGetValue(level, out var levelPackets))
+                        levelPackets.TryGetValue(type, out classType);
                     if (classType == null)
                     {
                         HandleUnknownPacket(connection, type, level, stream2);
@@ -253,7 +259,7 @@ public class GameProtocolHandler : BaseProtocolHandler
         var dump = new StringBuilder();
         for (var i = stream.Pos; i < stream.Count; i++)
             dump.AppendFormat("{0:x2} ", stream.Buffer[i]);
-        Logger.Error("Unknown packet 0x{0:x2}({3}) from {1}:\n{2}", type, connection.Ip, dump, level);
+        Logger.Debug("Unknown packet 0x{0:x2}({3}) from {1}:\n{2}", type, connection.Ip, dump, level);
         if (type > 0x3ff)
         {
             EncryptionManager.needNewkey1 = true;

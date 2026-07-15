@@ -257,35 +257,17 @@ public class SCSkillFiredPacket : GamePacket
     {
         if (_skill.Template.Id == 2)
         {
-            // ближняя атака
-            if (_character?.IsAutoAttack == true)
-            {
-                // автоатака
-                stream.Write((short)0);
-                stream.Write((short)0);
+            // ближняя атака — ALWAYS send a real strike (hit timing + fire anim id).
+            // Auto-attack repeat is now server-driven (UseAutoAttackSkillTask). The old
+            // IsAutoAttack sub-branch sent result=TooFarRange ("no strike"), which suppressed
+            // the hit FX + floating damage number on every auto-attack swing — removed.
+            stream.Write((short)FireAnimData[_fireAnimId]); // melee hit timing per animation
+            stream.Write((short)0);
 
-                //stream.Write((byte)1);  // f - When changed to 1 when firing an auto-casting skill, will make the little blue arrow.
-                //stream.Write((byte)15); // c
+            WriteExtraData(stream);
 
-                ExtraDataFlag = ExtraDataFlags.HasByte;
-                SetSkillResult(SkillResult.TooFarRange); // ExtraDataByte = 15;
-                WriteExtraData(stream);
-
-                stream.WritePisc(_id, 0); // added skill type here in 3.0.3.0
-                stream.Write(FiredFlag); // flag
-            }
-            else
-            {
-                // отдельные удары
-                stream.Write((short)FireAnimData[_fireAnimId]); // выставляем время для ближнего боя в зависимости от анимации
-                stream.Write((short)0);
-
-                //stream.Write((byte)0); // f - When changed to 1 when firing an auto-casting skill, will make the little blue arrow.
-                WriteExtraData(stream);
-
-                stream.WritePisc(_id, _fireAnimId); // added skill type here in 3.0.3.0
-                stream.Write(FiredFlag); // flag
-            }
+            stream.WritePisc(_id, _fireAnimId); // added skill type here in 3.0.3.0
+            stream.Write(FiredFlag); // flag
         }
         else
         {

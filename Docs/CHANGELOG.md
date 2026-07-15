@@ -1,4 +1,40 @@
-# CHANGELOG - AAEmu 5.0.7.0 Private Server
+﻿# CHANGELOG - AAEmu 5.0.7.0 Private Server
+
+## [5.0.7.0 private] - 15.07.2026
+
+### Fixes / Исправления
+
+**fix(patches): внедрить набор патчей AAFree 5.0 от devincean-gif**
+
+На русском:
+- Внедрены серверные патчи из проекта `devincean-gif/archeage-v5.0-patches`
+- Автор патчей: `devincean-gif`
+- Исправлены сетевые и runtime-проблемы: защита `PacketStream.Roundup`, crash-guard для неверного packet level, снижение scanner/unknown-packet log flood
+- Добавлены и адаптированы патчи боевой системы: continuous auto-attack, hit FX для auto-attack, корректная обработка `SCSkillFiredPacket`
+- Добавлены исправления питомцев и смерти: mate death/revive cooldown, revive через HealPet, level-scaled death penalty и recoverable exp
+- Добавлены quest/cinema исправления: directing-mode cinema, vehicle dismount на cinematic, report NPC group, item group gather/use acts, rejected quest-offer freeze guard, sphere component matching
+- Добавлены world/vehicle/NPC исправления: cave floor clamp, recorded nav floor для движения и спавна, terrain preloader, stuck rider/player recovery, vehicle OOB guard, vehicle world streaming
+- Добавлены gathering и well/self-cast use исправления
+- Обновлены `NLog.config`, `World.json`, `CharacterSettings.json`, `ExampleConfig.json`
+- Добавлены SQL-патчи и canonical dump updates для `aaemu_game_5070`: `mates.revive_time`, Loyalty marketplace catalog, compact SQLite `npc_mount_skills` dedup
+- Добавлен client-pak патч `Docs/client-patches/vehicle-summon-reading-roll.patch`
+
+English:
+- Applied server patch set from `devincean-gif/archeage-v5.0-patches`
+- Patch author: `devincean-gif`
+- Fixed networking/runtime issues: `PacketStream.Roundup` overflow guard, invalid packet-level crash guard, scanner/unknown-packet log flood reduction
+- Added combat fixes: continuous auto-attack, auto-attack hit FX, `SCSkillFiredPacket` handling
+- Added mate/death fixes: mate death/revive cooldown, HealPet revive, level-scaled death penalty and recoverable exp
+- Added quest/cinema fixes: directing-mode cinema, cinematic vehicle dismount, report NPC group, item group gather/use acts, rejected quest-offer freeze guard, sphere component matching
+- Added world/vehicle/NPC fixes: cave floor clamp, recorded nav floor for movement/spawn, terrain preloader, stuck rider/player recovery, vehicle OOB guard, vehicle world streaming
+- Added gathering and well/self-cast use fixes
+- Updated `NLog.config`, `World.json`, `CharacterSettings.json`, `ExampleConfig.json`
+- Added SQL patches and canonical dump updates for `aaemu_game_5070`: `mates.revive_time`, Loyalty marketplace catalog, compact SQLite `npc_mount_skills` dedup
+- Added client-pak patch `Docs/client-patches/vehicle-summon-reading-roll.patch`
+
+Source: `https://github.com/devincean-gif/archeage-v5.0-patches`
+
+---
 
 ## [5.0.7.0 private] - 13.06.2026
 

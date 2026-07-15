@@ -55,8 +55,8 @@
 	"Loyalty": {
 		"DailyLogin": 5,
 		"Default": 0,
-		"TickAmount": 0,
-		"TickAmountPremium": 0,
+		"TickAmount": 10,
+		"TickAmountPremium": 15,
 		"TickMinutes": 5
 	}
 }

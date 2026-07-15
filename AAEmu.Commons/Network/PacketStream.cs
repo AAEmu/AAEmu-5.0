@@ -176,9 +176,23 @@ public class PacketStream : ICloneable, IComparable
 
     private static byte[] Roundup(int length)
     {
+        // Guard against malformed/hostile packets: a length above 2^30 used to overflow
+        // `i` (16, 32, ... 2^31 -> negative -> 0) so `0 << 1 == 0` spun forever at 100% CPU,
+        // jamming the network handler (StreamProtocolHandler.OnReceive). Now the loop can only
+        // grow `i`, and an absurd length throws -> the OnReceive try/catch shuts the connection.
+        if (length < 0)
+            throw new ArgumentOutOfRangeException(nameof(length), length, "Negative buffer length");
         var i = 16;
-        while (length > i)
-            i <<= 1;
+        while (i < length)
+        {
+            var next = i << 1;
+            if (next < i) // would overflow Int32 -> use exact length (alloc may OOM, which is caught upstream)
+            {
+                i = length;
+                break;
+            }
+            i = next;
+        }
         return new byte[i];
     }
 
@@ -457,7 +471,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 1 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
         return this[Pos++];
@@ -471,7 +485,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 1 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
         return (sbyte)this[Pos++];
@@ -486,7 +500,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + count > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return new byte[0]; // Возвращаем пустой массив
         }
 
@@ -506,7 +520,7 @@ public class PacketStream : ICloneable, IComparable
 
         if (Pos + count > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return new byte[0]; // Возвращаем пустой массив
         }
 
@@ -524,7 +538,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 2 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return '\0'; // Возвращаем значение по умолчанию
         }
 
@@ -543,7 +557,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 2 * count > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return new char[0]; // Возвращаем пустой массив
         }
 
@@ -562,7 +576,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 2 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -580,7 +594,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 4 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -598,7 +612,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 8 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -616,7 +630,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 2 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -634,7 +648,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 4 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -652,7 +666,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 3 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -669,7 +683,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 8 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -687,7 +701,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 4 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -705,7 +719,7 @@ public class PacketStream : ICloneable, IComparable
     {
         if (Pos + 8 > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return 0; // Возвращаем значение по умолчанию
         }
 
@@ -728,7 +742,7 @@ public class PacketStream : ICloneable, IComparable
         var i = ReadInt16();
         if (Pos + i > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return new PacketStream(); // Возвращаем пустой PacketStream
         }
         var newStream = new PacketStream(Buffer, Pos, i);
@@ -746,7 +760,7 @@ public class PacketStream : ICloneable, IComparable
         var i = ReadInt16();
         if (Pos + i > Count)
         {
-            Logger.Error("Attempted to read beyond the end of the stream.");
+            Logger.Debug("Attempted to read beyond the end of the stream.");
             return this; // Возвращаем текущий PacketStream
         }
         stream.Replace(Buffer, Pos, i);

@@ -57,6 +57,26 @@ public class WorldConfig
     /// </summary>
     public double GrowthRate { get; set; } = 1.0;
     /// <summary>
+    /// Minimum character level required to use gathering/harvesting/mining skills (e.g. Mine Stone, Gather Herbs,
+    /// Pick Fruit, Harvest Crops). Any gathering skill whose data-defined level requirement is higher than this is
+    /// clamped down to this value at load time; lower requirements are left untouched. Set to 1 to let players
+    /// gather from level 1. Detected via the skill's world-interaction type (Collect/Mine/Harvest/Pick), so it only
+    /// affects gathering skills and not normal combat/class abilities.
+    /// </summary>
+    public int GatheringMinLevel { get; set; } = 1;
+
+    /// <summary>
+    /// Quest context ids refused at accept. For quests broken by unimplemented quest act types (e.g.
+    /// EffectFire) that would soft-lock the client, and the on/off switch for seasonal/event quests.
+    /// Rejected cleanly so the offer cutscene closes (no freeze). Remove ids as act types get implemented
+    /// or the event system enables them. See project_archeage_broken_quests.
+    /// </summary>
+    public List<uint> DisabledQuestIds { get; set; } = new()
+    {
+        150, 1388, 1484, 5277, 5653, 5980, 6774, 6793, 8165, 8291, 8296, 8342,
+        8693, 8761, 8770, 8791, 8822, 8952, 9002, 9003, 9004, 9008, 9065, 9075
+    };
+    /// <summary>
     /// Number of days 1 week worth of tax pays for, set this to 3640 would make 1 tax payment last for about 10 years.
     /// </summary>
     public uint DaysForTaxPayment { get; set; } = 7u; 
@@ -222,6 +242,15 @@ public class SpawnHeightConfig
     /// removes the discontinuity. Default: 4.0 m. Set to 0 to restore V5's hard cut.
     /// </summary>
     public float SpawnHomeBlendBand { get; set; } = 4.0f;
+
+    /// <summary>
+    /// Max metres an NPC's resolved ground height may rise above its current reference Z in one
+    /// movement step. If the height lookup returns more than this above the NPC, it's treated as
+    /// the surface terrain above a cave/overhang (no cave-floor collision is loaded there) rather
+    /// than a walkable floor, and the NPC keeps its current Z instead of climbing up through the
+    /// cave roof toward you. Gentle slopes step up far less than this and are unaffected. 0 = off.
+    /// </summary>
+    public float MaxGroundRise { get; set; } = 8.0f;
 
     /// <summary>
     /// V6. When true (default), the ground Z used for NPCs prefers the bilinearly-interpolated
