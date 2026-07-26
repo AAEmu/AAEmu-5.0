@@ -37,6 +37,7 @@ public class Item : PacketMarshaler, IComparable<Item>
     private uint _runeId;
     private DateTime _chargeTime;
     private DateTime _freshnessTime;
+    private byte _mappingFailBonus;
 
     public bool IsDirty { get => _isDirty; set => _isDirty = value; }
     public byte WorldId { get => _worldId; set { _worldId = value; _isDirty = true; } }
@@ -112,7 +113,18 @@ public class Item : PacketMarshaler, IComparable<Item>
     public ushort TemperMagical { get => _TemperMagical; set { _TemperMagical = value; _isDirty = true; } }
     public uint RuneId { get => _runeId; set { _runeId = value; _isDirty = true; } }
     public DateTime ChargeProcTime { get; set; }
-    public byte MappingFailBonus { get; set; }
+    public byte MappingFailBonus
+    {
+        get => _mappingFailBonus;
+        set
+        {
+            if (_mappingFailBonus == value)
+                return;
+
+            _mappingFailBonus = value;
+            _isDirty = true;
+        }
+    }
 
     private uint[] _gemIds;
 

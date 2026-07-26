@@ -188,43 +188,64 @@ namespace AAEmu.Game.GameData
         }
 
         /// <summary>
-        /// ReplaceSelectAttribute - replacing one selected attribute with a random one
+        /// Replaces a selected modifier group with another modifier from the same group set.
+        /// The current group is used to resolve the exact set; resolving by attribute ID is
+        /// ambiguous because the same unit attribute can appear in multiple group sets.
         /// </summary>
-        /// <param name="categoryId"></param>
-        /// <param name="grade"></param>
-        /// <param name="existingAttributes"></param>
-        /// <param name="selectAttribute"></param>
-        /// <returns></returns>
-        public (int id, int attribute, int value) ReplaceSelectAttribute(int categoryId, byte grade, List<int> existingAttributes, int selectAttribute)
+        public (int id, int attribute, int value) ReplaceSelectModifierGroup(
+            int categoryId,
+            byte grade,
+            List<int> existingAttributes,
+            int currentModifierGroupId)
         {
-            if (!_itemRndAttrUnitModifierGroupSets.TryGetValue(categoryId, out var unitModifierGroupSets))
+            if (!_itemRndAttributUnitModifierGroups.TryGetValue(currentModifierGroupId, out var currentGroup))
                 return (0, 0, 0);
 
-            var random = Random.Shared; // Use Random.Shared for better randomness and thread safety
-            var existingAttributesSet = new HashSet<int>(existingAttributes);
-            var availableAttributes = unitModifierGroupSets.Values.ToList();
+            if (!_itemRndAttrUnitModifierGroupSets.TryGetValue(categoryId, out var categoryGroupSets) ||
+                !categoryGroupSets.ContainsKey(currentGroup.ItemRndAttrUnitModifierGroupSetId))
+                return (0, 0, 0);
 
-            foreach (var groupSet in availableAttributes)
+            if (!_itemRndAttrUnitModifierGroups.TryGetValue(
+                    currentGroup.ItemRndAttrUnitModifierGroupSetId,
+                    out var modifierGroups))
+                return (0, 0, 0);
+
+            var occupiedGroups = new HashSet<int>(existingAttributes);
+            var candidates = modifierGroups.Values
+                .Where(group => group.Id != currentModifierGroupId)
+                .Where(group => !occupiedGroups.Contains(group.Id))
+                .OrderBy(group => group.Id)
+                .ToList();
+
+            if (candidates.Count == 0)
+                return (0, 0, 0);
+
+            var selectedGroup = candidates[Rand.Next(candidates.Count)];
+            var value = GetUnitModifierRandomValue(selectedGroup.Id, grade);
+            return (selectedGroup.Id, selectedGroup.UnitAttributeId, value);
+        }
+
+        [Obsolete("Use ReplaceSelectModifierGroup with the current modifier group ID.")]
+        public (int id, int attribute, int value) ReplaceSelectAttribute(
+            int categoryId,
+            byte grade,
+            List<int> existingAttributes,
+            int selectAttribute)
+        {
+            if (!_itemRndAttrUnitModifierGroupSets.TryGetValue(categoryId, out var groupSets))
+                return (0, 0, 0);
+
+            foreach (var groupSet in groupSets.Values.OrderBy(groupSet => groupSet.Id))
             {
-                if (!_itemRndAttrUnitModifierGroups.TryGetValue(groupSet.Id, out var unitModifierGroups))
+                if (!_itemRndAttrUnitModifierGroups.TryGetValue(groupSet.Id, out var groups))
                     continue;
 
-                // Check if the specified attribute is present in any group's attributes
-                var isAttributePresent = unitModifierGroups.Values.Any(attr => attr.UnitAttributeId == selectAttribute);
-                if (!isAttributePresent)
-                    continue; // if the group does not contain the required attribute, skip it
-
-                var allAttributes = unitModifierGroups.Values
-                    .Where(group => !existingAttributesSet.Contains(group.Id))
-                    .ToList();
-
-                if (allAttributes.Count == 0)
-                    continue;
-
-                var randomIndex = Rand.Next(allAttributes.Count);
-                var selectedAttribute = allAttributes[randomIndex];
-                var value = GetUnitModifierRandomValue(selectedAttribute.Id, grade);
-                return (selectedAttribute.Id, selectedAttribute.UnitAttributeId, value);
+                var currentGroup = groups.Values
+                    .Where(group => group.UnitAttributeId == selectAttribute)
+                    .OrderBy(group => group.Id)
+                    .FirstOrDefault();
+                if (currentGroup != null)
+                    return ReplaceSelectModifierGroup(categoryId, grade, existingAttributes, currentGroup.Id);
             }
 
             return (0, 0, 0);
@@ -268,6 +289,22 @@ namespace AAEmu.Game.GameData
             var value = Rand.Next(min, max + 1);
             return value;
 
+        }
+
+        public int GetUnitModifierValue(int groupId, byte grade, int categoryId, uint currentExp)
+        {
+            var modifier = GetUnitModifier(groupId, grade);
+            if (modifier == null)
+                return 0;
+
+            var min = Math.Min(modifier.Min, modifier.Max);
+            var max = Math.Max(modifier.Min, modifier.Max);
+            var gradeExp = GetGradeExp(categoryId, grade);
+            if (gradeExp <= 0)
+                return min;
+
+            var ratio = Math.Clamp(currentExp / (float)gradeExp, 0f, 1f);
+            return min + (int)((max - min) * ratio);
         }
 
         public ItemRndAttrUnitModifier GetUnitModifier(int groupId, int modifierId)
@@ -388,49 +425,64 @@ namespace AAEmu.Game.GameData
             return addExperience;
         }
 
-        public static (byte grade, int exp) CalculateGradeAndExp(int exp, int categoryId, byte beforeItemGrade = 0)
+        public static (byte grade, int exp) CalculateGradeAndExp(
+            int exp,
+            int categoryId,
+            byte beforeItemGrade = 0,
+            int maxEvolvingGrade = byte.MaxValue)
         {
-            Logger.Debug($"ItemEvolving: CalculateGradeAndExp: exp={exp}, categoryId={categoryId}");
-            var grades = new List<byte>
+            Logger.Debug($"ItemEvolving: CalculateGradeAndExp: exp={exp}, categoryId={categoryId}, beforeGrade={beforeItemGrade}, maxGrade={maxEvolvingGrade}");
+            var grades = new byte[]
             {
-                0,  // Grade 0 Обычный предмет - Basic
-                2,  // Grade 2 Необычный предмет - Grand
-                3,  // Grade 3 Редкий предмет - Rare
-                4,  // Grade 4 Уникальный предмет - Arcane
-                5,  // Grade 5 Эпический предмет - Heroic
-                6,  // Grade 6 Легендарный предмет - Unique
-                7,  // Grade 7 Реликвия - Celestial
-                8,  // Grade 8 предмет эпохи Чудес - Divine
-                9,  // Grade 9 предмет эпохи Сказаний - Epic
-                10, // Grade 10 предмет эпохи Легенд - Legendary
-                11, // Grade 11 предмет эпохи Мифов - Mythic
-                12  // Grade 12 предмет эпохи Двенадцати - Ethernal
+                0,  // Grade 0 Basic
+                2,  // Grade 2 Grand
+                3,  // Grade 3 Rare
+                4,  // Grade 4 Arcane
+                5,  // Grade 5 Heroic
+                6,  // Grade 6 Unique
+                7,  // Grade 7 Celestial
+                8,  // Grade 8 Divine
+                9,  // Grade 9 Epic
+                10, // Grade 10 Legendary
+                11, // Grade 11 Mythic
+                12  // Grade 12 Eternal
             };
 
-            byte res = 0;
-
+            var currentGrade = beforeItemGrade;
             foreach (var grade in grades)
             {
                 if (grade < beforeItemGrade)
                     continue;
+                if (grade > maxEvolvingGrade)
+                    break;
 
-                var gradeExp = ItemGameData.Instance.GetGradeExp(categoryId, grade);
-                if (gradeExp == 0)
-                    gradeExp = ItemGameData.Instance.GetGradeExp(4, grade); // как подстраховка
+                currentGrade = grade;
+                var gradeExp = Instance.GetGradeExp(categoryId, grade);
+                if (gradeExp <= 0)
+                {
+                    Logger.Warn($"ItemEvolving: no valid grade exp category={categoryId}, grade={grade}; stopping at grade={currentGrade}");
+                    return (currentGrade, Math.Max(0, exp));
+                }
 
                 if (exp <= gradeExp)
                 {
                     Logger.Debug($"ItemEvolving: CalculateGradeAndExp: exp={exp}, grade={grade}, gradeExp={gradeExp}");
-                    return (grade, exp);
+                    return (grade, Math.Max(0, exp));
                 }
 
-                res = grade;
+                // A full bar at the maximum evolving grade must stay at that grade.
+                if (grade == maxEvolvingGrade)
+                {
+                    Logger.Debug($"ItemEvolving: reached max grade={grade}, capping exp at {gradeExp}");
+                    return (grade, gradeExp);
+                }
+
                 exp -= gradeExp;
-                Logger.Debug($"ItemEvolving: CalculateGradeAndExp: exp={exp}, grade={res}, gradeExp={gradeExp}");
+                Logger.Debug($"ItemEvolving: CalculateGradeAndExp: remainingExp={exp}, completedGrade={grade}, gradeExp={gradeExp}");
             }
 
-            Logger.Debug($"ItemEvolving: CalculateGradeAndExp: exp={exp}, grade={res}");
-            return (res, exp);
+            Logger.Debug($"ItemEvolving: CalculateGradeAndExp: final exp={exp}, grade={currentGrade}");
+            return (currentGrade, Math.Max(0, exp));
         }
 
         public static List<int> GetCurrentAttributes(Item item)

@@ -212,6 +212,7 @@ public class EquipmentContainer : ItemContainer
     {
         base.OnEnterContainer(item, lastContainer, previousSlot); 
         ParentUnit?.BroadcastPacket(new SCUnitEquipmentsChangedPacket(ParentUnit.ObjId, (byte)item.Slot, item), false);
+        ParentUnit?.BroadcastPacket(new SCUnitEquipmentsRndAttrUnitModifierAcvtivateChangedPacket(ParentUnit), true);
         ParentUnit?.UpdateGearBonuses(item, null);
     }
 
@@ -219,6 +220,7 @@ public class EquipmentContainer : ItemContainer
     {
         base.OnLeaveContainer(item, newContainer, previousSlot);
         ParentUnit?.BroadcastPacket(new SCUnitEquipmentsChangedPacket(ParentUnit.ObjId, previousSlot, null), false);
+        ParentUnit?.BroadcastPacket(new SCUnitEquipmentsRndAttrUnitModifierAcvtivateChangedPacket(ParentUnit), true);
         ParentUnit?.UpdateGearBonuses(null, item);
     }
 }

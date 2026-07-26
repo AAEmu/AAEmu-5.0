@@ -1,4 +1,5 @@
 ﻿using System;
+
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
@@ -15,160 +16,166 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects;
 public class EquipmentAwakening : SpecialEffectAction
 {
     protected override SpecialType SpecialEffectActionType => SpecialType.EquipmentAwakening;
-    private const int Offset = 13;
-    private const int OffsetMax = Offset + 5;
-    private int CurrentLevel = 0;
-    private readonly double successChance = 10.0; // Base success chance
-    private readonly double breakChance = 0.0;
-    private double mappingFailBonus = 0.0; // Additional chance from failures
 
-    public override void Execute(BaseUnit caster,
-        SkillCaster casterObj,
-        BaseUnit target,
-        SkillCastTarget targetObj,
-        CastAction castObj,
-        Skill skill,
-        SkillObject skillObject,
-        DateTime time,
-        int mappingGroupId,
-        int value2,
-        int value3,
-        int value4,
-        int value5,
-        int value6,
-        int value7)
+    public override void Execute(BaseUnit caster, SkillCaster casterObj, BaseUnit target, SkillCastTarget targetObj,
+        CastAction castObj, Skill skill, SkillObject skillObject, DateTime time, int mappingGroupId, int value2,
+        int value3, int value4, int value5, int value6, int value7)
     {
-        // Validate caster
         if (caster is not Character character)
         {
-            Logger.Debug("Invalid caster type. Expected Character.");
+            Logger.Warn("EquipmentAwakening: caster is not Character");
             return;
         }
 
-        Logger.Debug($"Special effects: EquipmentAwakening mappingGroupId {mappingGroupId}, value2 {value2}, value3 {value3}, value4 {value4}, value5 {value5}, value6 {value6}, value7 {value7}");
-
-        // value1 = mappingGroupId 9
-        // value2 = breakChance 20 ?
-        // value4 = down grade  -2 
-
-        // Validate target type
         if (targetObj is not SkillCastItemTarget itemTarget)
         {
-            Logger.Debug("Invalid target type. Expected SkillCastItemTarget.");
+            Logger.Warn($"EquipmentAwakening: expected SkillCastItemTarget, got {targetObj?.GetType().Name ?? "null"}");
             return;
         }
 
-        // Validate caster type
         if (casterObj is not SkillItem skillItem)
         {
-            Logger.Debug("Invalid caster type. Expected SkillItem.");
+            Logger.Warn($"EquipmentAwakening: expected SkillItem, got {casterObj?.GetType().Name ?? "null"}");
             return;
         }
 
-        // Get the target item
         var sourceItem = character.Inventory.Bag.GetItemByItemId(itemTarget.Id);
-        if (sourceItem is null)
+        if (sourceItem is not EquipItem sourceEquip || sourceEquip.Template is not EquipItemTemplate)
         {
-            Logger.Debug($"Target item with ID {itemTarget.Id} not found in inventory.");
+            Logger.Warn($"EquipmentAwakening: target item {itemTarget.Id} is missing or is not equipment");
             return;
         }
 
-        // Validate target item type
-        if (sourceItem is not EquipItem equipItem)
+        if (sourceItem.HasFlag(ItemFlag.DisabledEnchant))
         {
-            Logger.Debug("Target item is not an EquipItem.");
+            Logger.Info($"EquipmentAwakening: item {sourceItem.Id} is disabled for enchanting and must be restored first");
+            character.SendPacket(new SCItemChangeMappingResultPacket(sourceItem, sourceItem,
+                (uint)mappingGroupId, (byte)GradeTamperingResult.Break));
             return;
         }
 
-        if (!(equipItem is { Template: EquipItemTemplate equipItemTemplate }))
+        var group = ItemGameData.Instance.GetItemChangeMappingGroup(mappingGroupId);
+        if (group.Id == 0)
         {
-            Logger.Debug($"Attempting to upgrade a non-equipment item. Item={equipItem.Id}");
+            Logger.Error($"EquipmentAwakening: mapping group {mappingGroupId} was not loaded");
             return;
         }
 
-        CurrentLevel = sourceItem.TemperMagical;
-        mappingFailBonus = sourceItem.MappingFailBonus;
-        var result = UseScroll(mappingGroupId);
-        sourceItem.MappingFailBonus += (byte)mappingFailBonus;
-
-        if (result > GradeTamperingResult.Success)
+        var targetTemplateId = ItemGameData.Instance.GetMappingItem(mappingGroupId, sourceItem.Grade, (int)sourceItem.TemplateId);
+        if (targetTemplateId == 0)
         {
-            // Send packets to the client
-            character.SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.ScaleCap, [new ItemBuyback(sourceItem)], []));
-            Logger.Debug("Failure.");
-            character.SendPacket(new SCItemChangeMappingResultPacket(sourceItem, sourceItem, (uint)mappingGroupId, (byte)result));
+            Logger.Error($"EquipmentAwakening: no mapping group={mappingGroupId}, source={sourceItem.TemplateId}, grade={sourceItem.Grade}");
+            return;
         }
-        else
+
+        var bonusBefore = sourceItem.MappingFailBonus;
+        var effectiveSuccessBasisPoints = GetEffectiveSuccessBasisPoints(group.Success, bonusBefore);
+        var result = Roll(effectiveSuccessBasisPoints, group.Disable);
+        if (result != GradeTamperingResult.Success)
         {
-            // TODO создать новый предмет и скопируем эффекты
-            // // TODO create a new item and copy the effects
-            var targetItemId = ItemGameData.Instance.GetMappingItem(mappingGroupId, sourceItem.Grade, (int)sourceItem.TemplateId);
-            if (targetItemId == 0)
+            if (result == GradeTamperingResult.Fail)
             {
-                Logger.Error($"EquipmentAwakening executed by {character.Name}. An improved version of the item was not found for the item sourceItem={sourceItem.Id}:{sourceItem.TemplateId}:{sourceItem.Grade}!");
-                return;
+                var failBonusPercent = Math.Max(0, group.FailBonus / 100);
+                sourceItem.MappingFailBonus = (byte)Math.Min(byte.MaxValue, bonusBefore + failBonusPercent);
             }
-            var targetItem = ItemManager.Instance.Create((uint)targetItemId, 1, sourceItem.Grade);
-            ItemGameData.CopyAllAttributes(sourceItem, targetItem);
+            else if (result == GradeTamperingResult.Break)
+            {
+                // Client item flag 0x40 is exposed as isEnchantDisable.
+                // Keep accumulated fail bonus; a restore scroll should only remove the lock.
+                sourceItem.SetFlag(ItemFlag.DisabledEnchant);
+            }
 
-            targetItem.Grade -= (byte)value4;
-            character.Inventory.Bag.AddOrMoveExistingItem(ItemTaskType.Invalid, targetItem);
-
-            // Send packets to the client
+            // MappingFailBonus is persisted inside the equipment details blob.
+            // Send the full item-detail packet as well: ItemUpdate uses the alternate
+            // additional-details layout and does not contain MappingFailBonus.
+            // ItemUpdate does not refresh ItemFlags in the 5.0 client.
+            // SetFlagsBits updates the broken-item overlay immediately without a relog.
             character.SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.EquipmentAwakening,
-            [
-                new ItemRemove(sourceItem),
-                new ItemAdd(targetItem)
-            ], []));
+                [new ItemUpdateBits(sourceItem)], []));
+            character.SendPacket(new SCItemDetailUpdatedPacket(sourceItem));
+            character.SendPacket(new SCItemChangeMappingResultPacket(sourceItem, sourceItem, (uint)mappingGroupId, (byte)result));
 
-            character.SendPacket(new SCItemChangeMappingResultPacket(sourceItem, targetItem, (uint)mappingGroupId, (byte)result));
-            character.Achievements?.TrackHiramGrade(targetItem.TemplateId, targetItem.Grade);
-            Logger.Debug("Success!");
+            var nextEffectiveSuccessBasisPoints = GetEffectiveSuccessBasisPoints(group.Success, sourceItem.MappingFailBonus);
+            Logger.Info($"EquipmentAwakening: result={result}, item={sourceItem.Id}, " +
+                        $"base={group.Success / 100.0:F2}%, bonus={bonusBefore:F2}%->{sourceItem.MappingFailBonus:F2}%, " +
+                        $"effective={effectiveSuccessBasisPoints / 100.0:F2}%->{nextEffectiveSuccessBasisPoints / 100.0:F2}%");
+            return;
         }
 
-        // Log the action
-        Logger.Debug($"EquipmentAwakening executed by {character.Name} on item {sourceItem.Id} with skill item {skillItem.ItemTemplateId}");
+        var targetItem = ItemManager.Instance.Create((uint)targetTemplateId, sourceItem.Count, sourceItem.Grade);
+        if (targetItem is not EquipItem targetEquip)
+        {
+            Logger.Error($"EquipmentAwakening: mapped template {targetTemplateId} is not equipment");
+            return;
+        }
+
+        CopyEquipmentState(sourceEquip, targetEquip, group.EvolvingExpInherit);
+        targetEquip.Grade = (byte)Math.Max(0, sourceEquip.Grade - Math.Max(0, value4));
+        targetEquip.MappingFailBonus = 0;
+        targetEquip.RemoveFlag(ItemFlag.DisabledEnchant);
+
+        var sourceSlot = sourceItem.Slot;
+        if (!character.Inventory.Bag.RemoveItem(ItemTaskType.Invalid, sourceItem, true))
+        {
+            Logger.Error($"EquipmentAwakening: failed to remove source item {sourceItem.Id}");
+            return;
+        }
+
+        if (!character.Inventory.Bag.AddOrMoveExistingItem(ItemTaskType.Invalid, targetItem, sourceSlot))
+        {
+            Logger.Error($"EquipmentAwakening: failed to insert target item {targetItem.Id} into slot {sourceSlot}");
+            return;
+        }
+
+        character.SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.EquipmentAwakening,
+            [new ItemRemove(sourceItem), new ItemAdd(targetItem)], []));
+        character.SendPacket(new SCItemChangeMappingResultPacket(sourceItem, targetItem, (uint)mappingGroupId, (byte)GradeTamperingResult.Success));
+        character.Achievements?.TrackHiramGrade(targetItem.TemplateId, targetItem.Grade);
+
+        Logger.Info($"EquipmentAwakening: success character={character.Name}, scroll={skillItem.ItemTemplateId}, " +
+                    $"source={sourceItem.TemplateId}:{sourceItem.Grade}, target={targetItem.TemplateId}:{targetItem.Grade}, " +
+                    $"group={mappingGroupId}, inheritExp={group.EvolvingExpInherit}");
     }
 
-    private GradeTamperingResult UseScroll(int mappingGroupId)
+    private static int GetEffectiveSuccessBasisPoints(int baseSuccessBasisPoints, byte failBonusPercent)
     {
-        var icmg = ItemGameData.Instance.GetItemChangeMappingGroup(mappingGroupId);
+        return Math.Clamp(baseSuccessBasisPoints + failBonusPercent * 100, 0, 10000);
+    }
 
-        // Calculate total chance, not exceeding 100%
-        var totalChance = icmg.Success / 100.0 + mappingFailBonus;
-        if (totalChance > 100.0)
-        {
-            totalChance = 100.0;
-        }
+    private static GradeTamperingResult Roll(int effectiveSuccessBasisPoints, int disableBasisPoints)
+    {
+        var success = Math.Clamp(effectiveSuccessBasisPoints, 0, 10000);
+        var disable = Math.Clamp(disableBasisPoints, 0, 10000 - success);
+        var roll = Rand.Next(0, 10000);
 
-        // Generate a random number between 0 and 100
-        var random = new Random();
-        var roll = Rand.NextDouble() * 100;
-        var breakRoll = Rand.NextDouble() * 100;
-
-        // Determine success or failure
-        if (roll <= totalChance)
-        {
-            Logger.Debug($"Success! (Roll: {roll:F2} <= Total Chance: {totalChance:F2}%)");
-            mappingFailBonus = 0.0; // Reset the bonus on success
-            // Display current MappingFailBonus
-            Logger.Debug($"Current MappingFailBonus: {mappingFailBonus:F2}%\n");
-
+        if (roll < success)
             return GradeTamperingResult.Success;
-        }
 
-        if (breakRoll < icmg.Disable / 10000.0)
-        {
-            Logger.Debug($"Break. (Break Roll: {breakRoll:F2} <= Break Chance: {breakChance:F2}%)");
+        if (roll < success + disable)
             return GradeTamperingResult.Break;
-        }
-
-        Logger.Debug($"Failure. (Roll: {roll:F2} > Total Chance: {totalChance:F2}%)");
-        mappingFailBonus = icmg.FailBonus / 100.0; // Increase bonus on failure
-
-        // Display current MappingFailBonus
-        Logger.Debug($"Current MappingFailBonus: {mappingFailBonus:F2}%\n");
 
         return GradeTamperingResult.Fail;
+    }
+
+    private static void CopyEquipmentState(EquipItem source, EquipItem target, bool inheritEvolvingExp)
+    {
+        ItemGameData.CopyAllAttributes(source, target);
+        if (!inheritEvolvingExp)
+            target.GemIds[3] = 0;
+
+        target.ItemFlags = source.ItemFlags;
+        target.ImageItemTemplateId = source.ImageItemTemplateId;
+        target.Durability = source.Durability;
+        target.ChargeCount = source.ChargeCount;
+        target.ChargeTime = source.ChargeTime;
+        target.ChargeProcTime = source.ChargeProcTime;
+        target.TemperPhysical = source.TemperPhysical;
+        target.TemperMagical = source.TemperMagical;
+        target.RuneId = source.RuneId;
+        target.UccId = source.UccId;
+        target.MadeUnitId = source.MadeUnitId;
+        target.UnsecureTime = source.UnsecureTime;
+        target.ExpirationTime = source.ExpirationTime;
+        target.ExpirationOnlineMinutesLeft = source.ExpirationOnlineMinutesLeft;
     }
 }

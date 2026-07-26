@@ -144,6 +144,7 @@ public enum SpecialType
     PlayAttachmentAnim = 149,
     PlaySkillControllerAttachmentAnim = 150,
     ItemSmelting = 151,
+    RestoreDisableEnchant = 156,
     ActivateMigrationPendant = 162, // выбор (активировать): изменить страницу со статами
     EquipmentAwakening = 165  // 
 }

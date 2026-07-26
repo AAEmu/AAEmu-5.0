@@ -2722,8 +2722,11 @@ public partial class Character : Unit, ICharacter
 
     public override void AddVisibleObject(Character character)
     {
-        if (this != character) // Never send to self, or the client crashes
+        if (this != character) // Never send SCUnitStatePacket to self, or the client crashes
+        {
             character.SendPacket(new SCUnitStatePacket(this));
+            character.SendPacket(new SCUnitEquipmentsRndAttrUnitModifierAcvtivateChangedPacket(this));
+        }
         character.SendPacket(new SCUnitPointsPacket(ObjId, Hp, Mp, HighAbilityRsc));
         /*
         // If player is hanging on something, also send a hung packet, this should work in theory, but doesn't

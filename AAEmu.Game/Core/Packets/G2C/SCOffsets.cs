@@ -1,4 +1,4 @@
-﻿namespace AAEmu.Game.Core.Packets.G2C
+namespace AAEmu.Game.Core.Packets.G2C
 {
     public static class SCOffsets
     {
@@ -707,8 +707,8 @@
         public const ushort SCItemAcquisitionPacket = 0x216;
         public const ushort SCItemGradeEnchantResultPacket = 0x103;
         public const ushort SCItemTemperingResultPacket = 0x02C; // off_39E9E638
-        public const ushort SCLinkTextForEnchantBroadcastPacket = 0x1D9; // off_39E9E660 SCItemAwakeningResultPacket
-        public const ushort off_39E9E670 = 0x279;
+        public const ushort SCLinkTextForEnchantBroadcastPacket = 0x1D9; // off_39E9E660
+        public const ushort SCItemTaskConfirmAskPacket = 0x279; // off_39E9E670
         public const ushort SCCvfCombatPacket = 0x076;
         public const ushort SCAddHousePacket = 0x235;
         //public const ushort SCChatSpamConfigPacket = 0x2AB;

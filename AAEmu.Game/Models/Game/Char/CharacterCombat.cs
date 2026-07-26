@@ -95,6 +95,7 @@ public partial class Character
                 doodad.Save();
 
                 BroadcastPacket(new SCUnitEquipmentsChangedPacket(ObjId, (byte)EquipmentItemSlot.Backpack, null), false);
+                BroadcastPacket(new SCUnitEquipmentsRndAttrUnitModifierAcvtivateChangedPacket(this), false);
             }
 
         }

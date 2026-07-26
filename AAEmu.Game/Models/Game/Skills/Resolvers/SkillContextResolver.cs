@@ -123,6 +123,14 @@ public static class SkillContextResolver
             return originalTarget;
         }
 
+        // Item-targeted skills must keep the item payload supplied by the client.
+        // Some item-use templates are marked Self/Source because the scroll itself
+        // is cast by the character; replacing this target loses the item id.
+        if (originalTarget is SkillCastItemTarget)
+        {
+            return originalTarget;
+        }
+
         if (skillTemplate.TargetSelection == SkillTargetSelection.Source || skillTemplate.TargetType == SkillTargetType.Self)
         {
             return CreateUnitTarget(effectiveCaster?.ObjId ?? player?.ObjId ?? originalTarget?.ObjId ?? 0);

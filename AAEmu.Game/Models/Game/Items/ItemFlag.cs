@@ -11,5 +11,6 @@ public enum ItemFlag : byte
     Secure = 0x04,
     Skinized = 0x08,
     Unpacked = 0x10,
-    AuctionWin = 0x20
+    AuctionWin = 0x20,
+    DisabledEnchant = 0x40
 }
