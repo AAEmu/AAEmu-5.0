@@ -1,7 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-
-using AAEmu.Commons.Network;
+﻿using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Network.Game;
@@ -596,6 +593,14 @@ public class SCUnitStatePacket : GamePacket
 
         _unit.Buffs.GetAllBuffs(goodBuffs, badBuffs, hiddenBuffs, false);
 
+        if (npc is not null && npc.Template.PassiveBuffs.Count > 0)
+        {
+            // Template passives are already sent in the passive buff list above.
+            RemoveNpcPassiveDuplicates(goodBuffs, npc.Template.PassiveBuffs);
+            RemoveNpcPassiveDuplicates(badBuffs, npc.Template.PassiveBuffs);
+            RemoveNpcPassiveDuplicates(hiddenBuffs, npc.Template.PassiveBuffs);
+        }
+
         stream.Write((byte)goodBuffs.Count); // TODO max 32
         foreach (var buff in goodBuffs)
         {
@@ -616,6 +621,22 @@ public class SCUnitStatePacket : GamePacket
         #endregion NetBuff
 
         return stream;
+    }
+
+    private static void RemoveNpcPassiveDuplicates(List<Buff> buffs, List<NpcPassiveBuff> passives)
+    {
+        for (var i = buffs.Count - 1; i >= 0; i--)
+        {
+            var buffId = buffs[i].Template.BuffId;
+            foreach (var passive in passives)
+            {
+                if (passive.PassiveBuff?.BuffId != buffId)
+                    continue;
+
+                buffs.RemoveAt(i);
+                break;
+            }
+        }
     }
 
     private void WriteBuff(PacketStream stream, Buff buff)

@@ -1922,6 +1922,12 @@ public partial class Npc
     /// Перемещается к целевой позиции с обходом препятствий.
     /// </summary>
     public MoveResult MoveTowards(Vector3 other, float distance, byte actorFlags = 4, float rangeTolerance = 1f)
+        => MoveTowards(other, distance, actorFlags, rangeTolerance, 0f);
+
+    internal MoveResult WalkTowards(Vector3 other, float distance, float stepSeconds, float rangeTolerance)
+        => MoveTowards(other, distance, 5, rangeTolerance, stepSeconds);
+
+    private MoveResult MoveTowards(Vector3 other, float distance, byte actorFlags, float rangeTolerance, float stepSeconds)
     {
         distance *= Ai?.Owner?.MoveSpeedMul ?? 1f;
 
@@ -2124,8 +2130,20 @@ public partial class Npc
         var movementTarget = new Vector3(newX, newY, worldZ);
         var angle = MathUtil.CalculateAngleFrom(oldPosition, movementTarget);
         var movementIntensity = actorFlags == 5 ? 63 : 127;
-        var velocityMagnitude = actorFlags == 5 ? 2500f : 4000f;
-        var (velX, velY) = MathUtil.AddDistanceToFront(velocityMagnitude, 0, 0, (float)angle.DegToRad());
+        short velX, velY;
+        if (stepSeconds > 0f)
+        {
+            // Actor movement encodes each velocity component over the signed range ±60 m/s.
+            velX = EncodeActorVelocity((newX - oldPosition.X) / stepSeconds);
+            velY = EncodeActorVelocity((newY - oldPosition.Y) / stepSeconds);
+        }
+        else
+        {
+            var velocityMagnitude = actorFlags == 5 ? 2500f : 4000f;
+            var (legacyVelX, legacyVelY) = MathUtil.AddDistanceToFront(velocityMagnitude, 0, 0, (float)angle.DegToRad());
+            velX = (short)legacyVelX;
+            velY = (short)legacyVelY;
+        }
 
         Transform.Local.SetPosition(newX, newY, worldZ);
         Transform.Local.SetRotationDegree(0f, 0f, (float)angle - 90);
@@ -2134,8 +2152,8 @@ public partial class Npc
         moveType.X = Transform.Local.Position.X;
         moveType.Y = Transform.Local.Position.Y;
         moveType.Z = Transform.Local.Position.Z;
-        moveType.VelX = (short)velX;
-        moveType.VelY = (short)velY;
+        moveType.VelX = velX;
+        moveType.VelY = velY;
         moveType.VelZ = 0;
         moveType.RotationX = rx;
         moveType.RotationY = ry;
@@ -2165,6 +2183,9 @@ public partial class Npc
 
         return FinalizeMoveResult(MoveResult.Moving);
     }
+
+    private static short EncodeActorVelocity(float metersPerSecond)
+        => (short)MathF.Floor(Math.Clamp(metersPerSecond / 60f, -1f, 1f) * short.MaxValue + 0.5f);
 
     private bool TryAdjustMovementAroundWorldMesh(Vector3 fromPosition, Vector3 toPosition, out Vector3 adjustedPosition)
     {

@@ -139,13 +139,12 @@ public class RoamingBehavior : BaseCombatBehavior
     private void MoveTowardsTarget(TimeSpan delta)
     {
         var moveSpeed = Ai.GetRealMovementSpeed(Ai.Owner.BaseMoveSpeed);
-        var moveFlags = Ai.GetRealMovementFlags(moveSpeed);
-        moveSpeed *= delta.Milliseconds / 1000.0;
+        var stepSeconds = delta.Milliseconds / 1000.0;
 
         // Use the improved MoveTowards (NpcPathfindingImproved) which applies
         // NpcHeightResolver and the MaxVerticalStepDelta guard, preventing NPCs
         // from falling through raised floors when roaming.
-        var moveResult = Ai.Owner.MoveTowards(_targetRoamPosition, (float)moveSpeed, moveFlags, 1f);
+        var moveResult = Ai.Owner.WalkTowards(_targetRoamPosition, (float)(moveSpeed * stepSeconds), (float)stepSeconds, MinimumRoamingDistance);
         switch (moveResult)
         {
             case MoveResult.ReachedDestination:

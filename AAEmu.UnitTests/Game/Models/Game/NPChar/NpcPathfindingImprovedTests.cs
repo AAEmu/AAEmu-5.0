@@ -1,26 +1,24 @@
-using System;
-using System.Collections.Generic;
-using System.Numerics;
+﻿using System.Numerics;
 using System.Reflection;
-using System.Threading;
-
+using AAEmu.Commons.Network;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
+using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.AI.v2.AiCharacters;
+using AAEmu.Game.Models.Game.AI.v2.Behaviors.Common;
+using AAEmu.Game.Models.Game.Models;
 using AAEmu.Game.Models.Game.NPChar;
-using AAEmu.Game.Models.Game.Units;
+using AAEmu.Game.Models.Game.Units.Movements;
 using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Physics;
-
-using InstanceWorld = AAEmu.Game.Models.Game.World.World;
-
 // PhysicsManager is in AAEmu.Game.Core.Managers.World (re-imported above)
 
 using Jitter2.LinearMath;
-
 using Moq;
 using Xunit;
+using InstanceWorld = AAEmu.Game.Models.Game.World.World;
 
 // Target adaptation notes:
 // Source tests use WorldInstance(template, 0, true, id) — target uses World directly.
@@ -69,6 +67,58 @@ public sealed class NpcPathfindingImprovedTests : IDisposable
     }
 
     private static uint GetNextId() => (uint)Interlocked.Increment(ref s_nextId);
+
+    [Theory]
+    [InlineData(1.8f)]
+    [InlineData(2.2f)]
+    public void RoamingMovement_PublishesWalkAtModelSpeed(float walkSpeed)
+    {
+        var world = CreateWorld(0f);
+        var npc = new Mock<Npc>();
+        npc.SetupGet(x => x.BaseMoveSpeed).Returns(walkSpeed);
+        npc.SetupGet(x => x.MoveSpeedMul).Returns(1f);
+        npc.SetupGet(x => x.Events).CallBase();
+        npc.Object.Template = new NpcTemplate();
+        npc.Object.Hp = 1;
+        npc.Object.DisabledSetPosition = true;
+        npc.Object.CurrentGameStance = GameStanceType.Relaxed;
+        npc.Object.Transform.Local.SetPosition(20f, 20f, 0f);
+        SetTransformZoneId(npc.Object, world.Id);
+        var ai = new BigMonsterRoamingAiCharacter { Owner = npc.Object };
+        npc.Object.Ai = ai;
+        var roaming = new RoamingBehavior { Ai = ai };
+        SetNonPublicField(roaming, "_targetRoamPosition", new Vector3(30f, 20f, 0f));
+
+        var movement = typeof(RoamingBehavior).GetMethod("MoveTowardsTarget", BindingFlags.Instance | BindingFlags.NonPublic);
+        var skillManager = SkillManager.Instance;
+        var taggedBuffs = typeof(SkillManager).GetField("_taggedBuffs", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var previousTags = taggedBuffs.GetValue(skillManager);
+        try
+        {
+            if (previousTags == null)
+                taggedBuffs.SetValue(skillManager, new Dictionary<uint, List<uint>>());
+            movement!.Invoke(roaming, [TimeSpan.FromMilliseconds(125)]);
+        }
+        finally
+        {
+            if (previousTags == null)
+                taggedBuffs.SetValue(skillManager, null);
+        }
+
+        var call = Assert.Single(npc.Invocations, invocation => invocation.Arguments.Count > 0 &&
+            invocation.Arguments[0] is SCOneUnitMovementPacket);
+        var stream = ((SCOneUnitMovementPacket)call.Arguments[0]).Write(new PacketStream());
+        stream.Rollback();
+        stream.ReadBc();
+        Assert.Equal((byte)MoveTypeEnum.Unit, stream.ReadByte());
+        var move = new UnitMoveType();
+        move.Read(stream);
+
+        Assert.Equal(5, move.ActorFlags);
+        Assert.Equal(GameStanceType.Relaxed, move.Stance);
+        var velocity = MathF.Sqrt(move.VelX * move.VelX + move.VelY * move.VelY) * (60f / short.MaxValue);
+        Assert.InRange(velocity, walkSpeed - 0.003f, walkSpeed + 0.003f);
+    }
 
     private InstanceWorld CreateWorld(float terrainHeight)
     {
