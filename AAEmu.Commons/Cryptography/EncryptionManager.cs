@@ -3,10 +3,6 @@
  * by Nikes
  * by NLObP: оригинальный метод шифрации (как в crynetwork.dll)
  */
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -52,11 +48,11 @@ namespace AAEmu.Commons.Cryptography
             // Always remove old keys for this connection first to prevent encryption mismatches
             if (ConnectionKeys.TryGetValue(connectionId, out var oldKeys))
             {
-                Logger.Warn("Replacing old RSA key pair for ConnectionId={0}, AccountId={1}", 
+                Logger.Warn("Replacing old RSA key pair for ConnectionId={0}, AccountId={1}",
                     connectionId, oldKeys.RsaKeyPair != null ? accountId : 0);
                 ConnectionKeys.Remove(connectionId);
             }
-            
+
             var rsaKeyPair = new RSACryptoServiceProvider();
             var keys = new ConnectionKeychain(connectionId, rsaKeyPair);
             Logger.Debug("[{0}] Generated new RSA key pair for connection {1}.", accountId, connectionId);
@@ -75,7 +71,7 @@ namespace AAEmu.Commons.Cryptography
             // Cleanup happens automatically in GenerateRsaKeyPair when connection is reused
             Logger.Debug("RemoveConnectionKeys(ulong) is deprecated. Keys are stored by ConnectionId.");
         }
-        
+
         /// <summary>
         /// Removes encryption keys by ConnectionId (unique per session)
         /// </summary>
