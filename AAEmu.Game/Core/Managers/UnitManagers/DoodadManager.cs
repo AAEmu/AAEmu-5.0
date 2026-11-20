@@ -9,6 +9,7 @@ using AAEmu.Commons.Utils.Creatures;
 using AAEmu.Game.Core.Managers.Id;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
+using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.CommonFarm.Static;
 using AAEmu.Game.Models.Game.DoodadObj;
@@ -38,6 +39,10 @@ namespace AAEmu.Game.Core.Managers.UnitManagers;
 // ReSharper disable once ClassNeverInstantiated.Global
 public class DoodadManager : Singleton<DoodadManager>
 {
+    private const uint PlantHerbsSkillId = 25536;
+    private const uint PlantLargeObjectSkillId = 10953;
+    private const short UnprotectedPlantingLaborCost = 5;
+
     private Dictionary<uint, DoodadFuncGroups> _allFuncGroups;
 
     // Details data
@@ -3171,12 +3176,39 @@ public class DoodadManager : Singleton<DoodadManager>
     /// </summary>
     public static Doodad CreatePlayerDoodad(Character character, uint templateId, float x, float y, float z, float zRot, float scale, ulong itemId, FarmType farmType = FarmType.Invalid)
     {
+        using var placementLock = character.DoodadPlacementLock.EnterScope();
         Logger.Warn($"{character.Name} is placing a doodad templateId={templateId} at position {x} {y} {z}");
 
-        var targetHouse = HousingManager.Instance.GetHouseAtLocation(x, y);
+        var bag = character.Inventory.Bag;
+        var preferredItem = bag.GetItemByItemId(itemId);
+        if (preferredItem is not { Count: > 0 } ||
+            !ItemManager.Instance.GetItemIdsFromDoodad(templateId).Contains(preferredItem.TemplateId))
+        {
+            character.SendErrorMessage(ErrorMessageType.BagInvalidItem);
+            return null;
+        }
 
-        // Create doodad
+        var targetHouse = HousingManager.Instance.GetHouseAtLocation(x, y);
+        // Direct placement uses the cost shown in the client tooltips for these two skills.
+        var chargeLabor = targetHouse == null && farmType == FarmType.Invalid &&
+                          preferredItem.Template.UseSkillId is PlantHerbsSkillId or PlantLargeObjectSkillId;
+        if (chargeLabor && character.LaborPower < UnprotectedPlantingLaborCost)
+        {
+            character.SendErrorMessage(ErrorMessageType.NotEnoughLaborPower);
+            return null;
+        }
+
         var doodad = Instance.Create(0, templateId, character, true);
+        if (doodad == null)
+            return null;
+
+        if (bag.ConsumeItem(ItemTaskType.DoodadCreate, preferredItem.TemplateId, 1, preferredItem) != 1)
+        {
+            ObjectIdManager.Instance.ReleaseId(doodad.ObjId);
+            character.SendErrorMessage(ErrorMessageType.BagInvalidItem);
+            return null;
+        }
+
         doodad.IsPersistent = true;
         doodad.Transform = character.Transform.CloneDetached(doodad);
         doodad.Transform.Local.SetPosition(x, y, z);
@@ -3203,17 +3235,6 @@ public class DoodadManager : Singleton<DoodadManager>
             doodad.SetScale(scale);
         }
 
-        // Consume item
-        var items = ItemManager.Instance.GetItemIdsFromDoodad(templateId);
-        var preferredItem = character.Inventory.Bag.GetItemByItemId(itemId);
-
-        if (preferredItem == null)
-        {
-            Logger.Error($"Unable to create doodad because source item (Id: {itemId}) does not exist in {character.Name}'s bag inventory.");
-            doodad.Delete();
-            return null;
-        }
-
         doodad.ItemTemplateId = preferredItem.TemplateId;
         if (preferredItem.Template.MaxCount > 1)
         {
@@ -3225,14 +3246,12 @@ public class DoodadManager : Singleton<DoodadManager>
             coffer.InitializeCoffer(character.Id);
         }
 
-        foreach (var item in items)
-        {
-            character.ItemUse(preferredItem);
-            character.Inventory.ConsumeItem([SlotType.Bag], ItemTaskType.DoodadCreate, item, 1, preferredItem);
-        }
+        if (chargeLabor)
+            character.ChangeLabor(-UnprotectedPlantingLaborCost, 0);
 
-        doodad.InitDoodad();
-        doodad.Spawn();
+        character.ItemUse(preferredItem);
+
+        doodad.SpawnPlayerPlacement(character);
         doodad.Save();
         SpawnManager.Instance.AddPlayerDoodad(doodad);
 

@@ -792,6 +792,23 @@ public class Doodad : BaseUnit
         PerformPhaseChange();
     }
 
+    internal void SpawnPlayerPlacement(Character character)
+    {
+        if (CurrentPhaseFuncs is not [{ FuncType: nameof(DoodadFuncGrowth) }])
+        {
+            InitDoodad();
+            Spawn();
+            return;
+        }
+
+        // The client derives the model scale from the first snapshot's remaining phase time.
+        var phase = (int)FuncGroupId;
+        LogPhaseChange(character, phase);
+        DoPhaseFuncs(character, ref phase);
+        Spawn();
+        BroadcastPacket(new SCDoodadPhaseChangedPacket(this), true);
+    }
+
     private void FastForwardInitialGrowth()
     {
         var visitedPhases = new HashSet<uint>();
