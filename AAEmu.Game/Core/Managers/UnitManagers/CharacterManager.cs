@@ -10,7 +10,6 @@ using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.GameData;
 using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.Achievement.Enums;
-using AAEmu.Game.Models.Game.Attendance;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Char.Templates;
 using AAEmu.Game.Models.Game.Chat;
@@ -564,7 +563,6 @@ public class CharacterManager : Singleton<CharacterManager>
         character.Mails = new CharacterMails(character);
         character.Portals = new CharacterPortals(character);
         character.Friends = new CharacterFriends(character);
-        character.Attendances = new CharacterAttendance(character);
         character.Achievements = new CharacterAchievements(character);
 
         character.Hp = character.MaxHp;

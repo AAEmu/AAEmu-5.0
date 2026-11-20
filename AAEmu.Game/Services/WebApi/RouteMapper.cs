@@ -1,13 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.RegularExpressions;
 
+using NLog;
+
 namespace AAEmu.Game.Services.WebApi;
+
 public class RouteMapper
 {
+    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     private Dictionary<string, RouteDefinition> _routes = new(StringComparer.CurrentCultureIgnoreCase);
     public void RegisterRoute(string path, HttpMethod httpMethod, MethodInfo targetMethod)
     {
@@ -40,17 +40,30 @@ public class RouteMapper
         return (null, null);
     }
 
-    // Find all classes that implement T and find the methods that have either WebApiGet or WebApiPost attributes
-    // and register them as routes
     internal void DiscoverRoutes<T>()
     {
-        var types = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(s => s.GetTypes())
-            .Where(p => typeof(T).IsAssignableFrom(p) && !p.IsInterface && !p.IsAbstract);
+        var controllerContract = typeof(T);
+        var assembly = controllerContract.Assembly;
+        Type[] types;
+        try
+        {
+            types = assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            foreach (var loaderException in ex.LoaderExceptions)
+            {
+                if (loaderException != null)
+                    Logger.Error(loaderException, "Could not load types from Web API controller assembly {0}.", assembly.FullName);
+            }
+
+            throw;
+        }
 
         foreach (var type in types)
         {
-            DiscoverRoutesFromType(type);
+            if (!type.IsInterface && !type.IsAbstract && controllerContract.IsAssignableFrom(type))
+                DiscoverRoutesFromType(type);
         }
     }
 

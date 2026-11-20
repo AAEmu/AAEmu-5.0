@@ -1,4 +1,7 @@
 ﻿using System.Net.Http;
+using System.Net;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Threading.Tasks;
 using AAEmu.Game.Services.WebApi;
 using AAEmu.Game.Services.WebApi.Controllers;
@@ -11,6 +14,30 @@ namespace AAEmu.UnitTests.Services.WebApi;
 
 public class RouteMapperTests
 {
+    [Fact]
+    public void DiscoverRoutes_WhenUnrelatedAssemblyHasAnUnloadableType_RegistersRoutes()
+    {
+        var unrelatedAssembly = AssemblyBuilder.DefineDynamicAssembly(
+            new AssemblyName("UnrelatedWebApiTestAssembly"), AssemblyBuilderAccess.RunAndCollect);
+        unrelatedAssembly.DefineDynamicModule("UnrelatedModule").DefineType("UnfinishedType");
+        Assert.Throws<ReflectionTypeLoadException>(() => unrelatedAssembly.GetTypes());
+
+        var routeMapper = new RouteMapper();
+        routeMapper.DiscoverRoutes<ITestController>();
+
+        var (route, _) = routeMapper.GetRoute("/world/logged-characters", HttpMethod.Get);
+        Assert.NotNull(route);
+        GC.KeepAlive(unrelatedAssembly);
+    }
+
+    [Fact]
+    public void WebApiServer_RegistersGameStatusRoute()
+    {
+        using var server = new WebApiServer(IPAddress.Loopback, 0);
+
+        var (route, _) = server.RouteMapper.GetRoute("/status", HttpMethod.Get);
+        Assert.NotNull(route);
+    }
 
     [Fact]
     public Task GetRoute_WhenSimpleRoute_ShouldFindAndMatch()
@@ -91,7 +118,9 @@ public class RouteMapperTests
 
         return Task.CompletedTask;
     }
-    internal sealed class MyController : BaseController
+    internal interface ITestController;
+
+    internal sealed class MyController : BaseController, ITestController
     {
         [WebApiGet("/world/logged-characters")]
         public HttpResponse GetCharacter(HttpRequest request)

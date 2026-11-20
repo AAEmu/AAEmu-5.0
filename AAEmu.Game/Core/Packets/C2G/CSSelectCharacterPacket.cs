@@ -59,18 +59,7 @@ public class CSSelectCharacterPacket() : GamePacket(CSOffsets.CSSelectCharacterP
 
             // начинаем слать пакеты
 
-            // TODO подобрать правильное место для пакета
-
-            character.Attendances.ResetIfNewMonth();
-
-            if (character.Attendances.Records?.Count == 0)
-            {
-                character.Attendances.SendEmptyAttendances();
-            }
-            else
-            {
-                character.Attendances.Send();
-            }
+            character.Attendances.Send();
 
             character.SendPacket(new SCResidentInfoListPacket(ResidentManager.Instance.GetInfo()));
             character.SendPacket(new SCCharacterStatePacket(character));

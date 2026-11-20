@@ -2703,7 +2703,6 @@ public partial class Character : Unit, ICharacter
             Quests?.Save(connection, transaction);
             TodayAssignments?.Save(connection, transaction);
             Mates?.Save(connection, transaction);
-            Attendances?.Save(connection, transaction);
             Achievements?.Save(connection, transaction);
             Stats?.Save(connection, transaction);
 

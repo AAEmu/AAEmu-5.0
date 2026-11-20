@@ -9,18 +9,6 @@ namespace AAEmu.Game.Core.Managers
     {
         private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
-        public void Add(uint characterId)
-        {
-            var character = WorldManager.Instance.GetCharacterById(characterId);
-            if (character == null)
-            {
-                Logger.Warn($"AttendanceManager: Character with ID {characterId} not found.");
-                return;
-            }
-
-            character.Attendances?.Add(character);
-        }
-
         public void Send(uint characterId)
         {
             var character = WorldManager.Instance.GetCharacterById(characterId);

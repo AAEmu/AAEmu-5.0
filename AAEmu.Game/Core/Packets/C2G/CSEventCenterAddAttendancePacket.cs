@@ -1,5 +1,4 @@
 ﻿using AAEmu.Commons.Network;
-using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Network.Game;
 
 namespace AAEmu.Game.Core.Packets.C2G;
@@ -14,8 +13,10 @@ public class CSEventCenterAddAttendancePacket : GamePacket
     {
         var characterId = stream.ReadUInt32();
 
-        Logger.Debug($"CSEventCenterAddAttendancePacket, characterId: {characterId}");
+        var character = Connection.ActiveChar;
+        if (character == null || character.Id != characterId || character.AccountId != Connection.AccountId)
+            return;
 
-        AttendanceManager.Instance.Add(characterId);
+        character.Attendances?.RegisterDailyAttendance();
     }
 }

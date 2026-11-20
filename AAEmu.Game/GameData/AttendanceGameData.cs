@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Linq;
 
 using AAEmu.Commons.Utils;
 using AAEmu.Game.GameData.Framework;
@@ -82,41 +81,24 @@ public class AttendanceGameData : Singleton<AttendanceGameData>, IGameDataLoader
 
     public (uint, int) GetReward(int year, int month, int dayCount)
     {
-        var itemId = 0u;
-        var countItem = 0;
-
-        foreach (var reward in _rewards.Where(ary => ary.Key == year)
-                     .SelectMany(ary => ary.Value.Where(ar => ar.Key == month)
-                         .SelectMany(ar => ar.Value.Where(reward => reward.DayCount == dayCount))))
-        {
-            itemId = reward.ItemId;
-            countItem = reward.ItemCount;
-        }
-        return (itemId, countItem);
+        return FindReward(_rewards, year, month, dayCount);
     }
 
     public (uint, int) GetAdditionalReward(int year, int month, int dayCount)
     {
-        var itemId = 0u;
-        var countItem = 0;
+        return FindReward(_additionalRewards, year, month, dayCount);
+    }
 
-        foreach (var ary in _additionalRewards)
-        {
-            if (ary.Key == year)
-                foreach (var ar in ary.Value)
-                {
-                    if (ar.Key == month)
-                        foreach (var reward in ar.Value)
-                        {
-                            if (reward.DayCount == dayCount && reward.AdditionalReward)
-                            {
-                                itemId = reward.ItemId;
-                                countItem = reward.ItemCount;
-                            }
-                        }
-                }
-        }
+    private static (uint, int) FindReward(Dictionary<int, Dictionary<int, List<AccountAttendanceReward>>> calendar, int year, int month, int dayCount)
+    {
+        if (calendar.TryGetValue(year, out var months) && months.TryGetValue(month, out var rewards))
+            for (var i = rewards.Count - 1; i >= 0; i--)
+            {
+                var reward = rewards[i];
+                if (reward.DayCount == dayCount)
+                    return (reward.ItemId, reward.ItemCount);
+            }
 
-        return (itemId, countItem);
+        return (0, 0);
     }
 }
