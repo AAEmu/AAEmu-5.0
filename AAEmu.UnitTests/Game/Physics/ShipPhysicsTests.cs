@@ -612,16 +612,11 @@ public class ShipPhysicsTests
     };
 
     /// <summary>
-    /// Creates a Jitter2 World, a Buoyancy instance (FluidBox at Y=100),
-    /// a ShipController + hull, and a Slave wired together with the given SpawnTime.
-    /// The hull is added to buoyancy via AddForRectangularParallelepiped.
-    /// Returns all three objects so the test can make assertions and clean up.
+    /// Creates a hull and registers it with buoyancy in the test's physics world.
     /// </summary>
-    private static (Jitter2.World world, Buoyancy buoyancy, ShipController ctrl, Slave slave)
-        BuildShipScenario(DateTime spawnTime, float portalTime = 10f)
+    private static (Buoyancy buoyancy, ShipController ctrl)
+        BuildShipScenario(Jitter2.World world, DateTime spawnTime, float portalTime = 10f)
     {
-        using var world = new Jitter2.World();
-
         // FluidBox: water surface at physics Y = 100 (game Z = 100)
         var buoyancy = new Buoyancy(world)
         {
@@ -651,14 +646,15 @@ public class ShipPhysicsTests
         // Register the hull with the buoyancy simulator
         buoyancy.AddForRectangularParallelepiped(ctrl.Hull, 3);
 
-        return (world, buoyancy, ctrl, slave);
+        return (buoyancy, ctrl);
     }
 
     [Fact]
     public void BuoyancyPreStep_DuringPortalTime_SetsGravityFalseAndZerosVelocity()
     {
         // Arrange: ship just spawned — PortalTime has NOT expired
-        var (world, buoyancy, ctrl, _) = BuildShipScenario(
+        using var world = new Jitter2.World();
+        var (buoyancy, ctrl) = BuildShipScenario(world,
             spawnTime: DateTime.UtcNow,   // spawned right now
             portalTime: 10f);             // portal lasts 10 s
 
@@ -681,7 +677,8 @@ public class ShipPhysicsTests
     public void BuoyancyPreStep_AfterPortalTime_EnablesGravity()
     {
         // Arrange: ship spawned 30 s ago — PortalTime (10 s) has expired
-        var (world, buoyancy, ctrl, _) = BuildShipScenario(
+        using var world = new Jitter2.World();
+        var (buoyancy, ctrl) = BuildShipScenario(world,
             spawnTime: DateTime.UtcNow.AddSeconds(-30),
             portalTime: 10f);
 
