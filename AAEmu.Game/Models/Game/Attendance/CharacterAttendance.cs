@@ -28,7 +28,8 @@ namespace AAEmu.Game.Models.Game.Attendance
         {
             Owner = owner;
             AccountId = owner.AccountId;
-            Load(MySQL.CreateConnection());
+            using var connection = MySQL.CreateConnection();
+            Load(connection);
             if (Records == null || Records.Count == 0)
             {
                 InitializeEmptyRecords();

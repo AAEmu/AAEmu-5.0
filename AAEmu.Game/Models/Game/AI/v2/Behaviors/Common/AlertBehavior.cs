@@ -17,7 +17,6 @@ public class AlertBehavior : BaseCombatBehavior
     private const float MinimumTickInterval = 0.1f; // 100ms between ticks
     private const string DefaultPipeName = "phase_dragon_ground";
 
-    private DateTime _lastTick;
     private bool _isInitialized;
     private Vector3 _originalRotation;
     private bool _isTracking;

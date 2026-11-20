@@ -74,7 +74,7 @@ public class Creature : IComparable
                 return -1;
             return 1;
         }
-        throw new Exception();
+        throw new ArgumentException("Object must be a Creature.", nameof(obj));
     }
 
     #endregion

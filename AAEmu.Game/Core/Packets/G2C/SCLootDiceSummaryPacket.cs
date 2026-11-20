@@ -7,15 +7,27 @@ using AAEmu.Game.Models.Game.Items.Loots;
 
 namespace AAEmu.Game.Core.Packets.G2C;
 
-public class SCLootDiceSummaryPacket(LootOwnerType lootOwnerType, uint lootOwner, ushort itemIndex, Dictionary<Character, sbyte> diceList)
-    : GamePacket(SCOffsets.SCLootDiceSummaryPacket, 5)
+public class SCLootDiceSummaryPacket : GamePacket
 {
+    private readonly LootOwnerType _lootOwnerType;
+    private readonly uint _lootOwner;
+    private readonly ushort _itemIndex;
+
+    public SCLootDiceSummaryPacket(LootOwnerType lootOwnerType, uint lootOwner, ushort itemIndex, Dictionary<Character, sbyte> diceList)
+        : base(SCOffsets.SCLootDiceSummaryPacket, 5)
+    {
+        _lootOwnerType = lootOwnerType;
+        _lootOwner = lootOwner;
+        _itemIndex = itemIndex;
+        _ = diceList; // The current packet layout intentionally omits the dice list.
+    }
+
     public override PacketStream Write(PacketStream stream)
     {
         #region iid
-        stream.Write(itemIndex);
-        stream.Write((ushort)lootOwnerType);
-        stream.WriteBc(lootOwner);
+        stream.Write(_itemIndex);
+        stream.Write((ushort)_lootOwnerType);
+        stream.WriteBc(_lootOwner);
         stream.Write((byte)0);
         #endregion
         //stream.Write(diceList.Count);

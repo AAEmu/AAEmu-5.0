@@ -49,7 +49,7 @@ public sealed class House : Unit
     /// IsDirty flag for Houses, not all properties are taken into account here as most of the data that needs to be updated will never change
     /// after it's initial addition to the table, like position/rotation. Therefore it's ok to only set the dirty marker on the other properties
     /// </summary>
-    public bool IsDirty { get => _isDirty; set => _isDirty = value; }
+    public new bool IsDirty { get => _isDirty; set => _isDirty = value; }
     public new uint Id { get => _id; set { _id = value; _isDirty = true; } }
     public ulong AccountId { get => _accountId; set { _accountId = value; _isDirty = true; } }
     public int Ht { get => _ht; set { _ht = value; _isDirty = true; } }

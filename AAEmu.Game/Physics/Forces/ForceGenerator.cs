@@ -25,12 +25,16 @@ public class ForceGenerator
         this.world = world;
 
 
-        _preStep = new World.WorldStep(PreStep);
-        _postStep = new World.WorldStep(PostStep);
+        _preStep = new World.WorldStep(OnPreStep);
+        _postStep = new World.WorldStep(OnPostStep);
 
         world.PostStep += _postStep;
         world.PreStep += _preStep;
     }
+
+    private void OnPreStep(TimeStep timeStep) => PreStep(timeStep.StepDt);
+
+    private void OnPostStep(TimeStep timeStep) => PostStep(timeStep.StepDt);
 
     /// <summary>
     /// 

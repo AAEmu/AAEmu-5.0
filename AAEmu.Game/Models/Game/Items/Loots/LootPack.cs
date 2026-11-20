@@ -14,6 +14,8 @@ using AAEmu.Game.Models.Game.Units;
 
 using NLog;
 
+#nullable enable annotations
+
 namespace AAEmu.Game.Models.Game.Items.Loots;
 
 public class LootPack
@@ -456,7 +458,7 @@ public class LootPack
     /// </summary>
     /// <param name="killer">Unit doing the killing blow</param>
     /// <returns></returns>
-    private ICharacter GetPlayerUsingKiller(IBaseUnit killer)
+    private Character? GetPlayerUsingKiller(IBaseUnit killer)
     {
         if (killer is Character character)
             return character;

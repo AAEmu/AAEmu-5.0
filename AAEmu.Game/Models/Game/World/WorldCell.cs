@@ -229,7 +229,7 @@ public class WorldCell
 
             // Register brush and voxel objects into the static geometry index of each world instance
             // that uses this template. This enables floor-height raycasting and wall-segment checks for NPCs.
-            if (LoadedObjectDat != null && LoadedObjectDat.PrefabsList.Count > 0)
+            if (LoadedObjectDat.PrefabsList.Count > 0)
             {
                 IngestObjectDatIntoStaticGeometryIndex(LoadedObjectDat, statObjsFiles);
             }

@@ -33,7 +33,7 @@ namespace AAEmu.Game.Core.Managers
         public void Load(uint worldId)
         {
             var fishSchools = GetFishSchoolsFromWorld(worldId);
-            if (fishSchools.Any())
+            if (fishSchools.Count > 0)
             {
                 FishSchools.AddOrUpdate(worldId, fishSchools, (key, existingList) =>
                 {
@@ -105,7 +105,7 @@ namespace AAEmu.Game.Core.Managers
                     // Find new items that didn't exist before
                     var newFishSchools = updatedFishSchools.Except(currentFishSchools).ToList();
 
-                    if (depletedFishSchools.Any() || newFishSchools.Any())
+                    if (depletedFishSchools.Count > 0 || newFishSchools.Count > 0)
                     {
                         // Update fish school list for the target world
                         FishSchools.AddOrUpdate(worldId, updatedFishSchools, (key, existingList) =>

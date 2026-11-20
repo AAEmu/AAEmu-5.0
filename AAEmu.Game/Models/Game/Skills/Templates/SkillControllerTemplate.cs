@@ -37,8 +37,6 @@ public class SkillControllerTemplate : EffectTemplate
         Logger.Info($"SkillControllerTemplate.Apply: kind={KindId}, owner={owner.ObjId}:{owner.Name}, target={targetUnit.ObjId}:{targetUnit.Name}, endSkill={EndSkillId}");
 
         var controller = SkillController.CreateSkillController(this, owner, targetUnit);
-        if (controller == null)
-            return;
 
         if (owner.ActiveSkillController != null)
             owner.ActiveSkillController.End();

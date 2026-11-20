@@ -1,7 +1,4 @@
-﻿using System;
-using System.Linq;
-
-using AAEmu.Commons.Network;
+﻿using AAEmu.Commons.Network;
 using AAEmu.Game.Models.Game.Items.Containers;
 using AAEmu.Game.Models.Game.Items.Templates;
 
@@ -130,7 +127,7 @@ public class Item : PacketMarshaler, IComparable<Item>
 
     public uint[] GemIds // 18 + 4 = 22 in 5.0.7.0, 16 in 3.0.3.0, 7 in 1.2
     {
-        get => _gemIds; 
+        get => _gemIds;
         set { _gemIds = value; _isDirty = true; }
     }
     public byte[] Detail { get; set; }
@@ -393,7 +390,7 @@ public class Item : PacketMarshaler, IComparable<Item>
                 stream.Write(10820f);
                 stream.Write(10830f);
                 stream.Write(10840f);
-                stream.Write(new byte[mDetailLength-16]);
+                stream.Write(new byte[mDetailLength - 16]);
                 break;
             case ItemDetailType.BigFish: // есть расшифровка в items/BigFish
             case ItemDetailType.Decoration:

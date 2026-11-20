@@ -1,23 +1,13 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
+﻿using System.Collections.Concurrent;
 using System.Numerics;
 using System.Threading;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.DoodadObj.Static;
 using AAEmu.Game.Models.Game.Models;
-using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.SkillControllers;
-using AAEmu.Game.Models.Game.Slaves;
-using AAEmu.Game.Models.Game.Static;
 using AAEmu.Game.Models.Game.Units.Movements;
 using AAEmu.Game.Models.Game.Units.slaves;
-using AAEmu.Game.Models.Game.Units.Static;
-using AAEmu.Game.Models;
 using AAEmu.Game.Physics;
 using AAEmu.Game.Physics.Forces;
 using AAEmu.Game.Physics.Util;
@@ -36,6 +26,7 @@ namespace AAEmu.Game.Core.Managers.World
     public class PhysicsManager : IDisposable
     {
         private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
+        private int _disposed;
         public InstanceWorld SimulationWorld { get; set; }
 
         /// <summary>
@@ -125,13 +116,13 @@ namespace AAEmu.Game.Core.Managers.World
                         if (cell == null || !cell.Loaded)
                             continue;
                         for (var inX = 0; inX < WorldManager.CELL_HMAP_RESOLUTION; inX++)
-                        for (var inY = 0; inY < WorldManager.CELL_HMAP_RESOLUTION; inY++)
-                        {
-                            var x = cellX * WorldManager.CELL_HMAP_RESOLUTION + inX;
-                            var y = cellY * WorldManager.CELL_HMAP_RESOLUTION + inY;
-                            hmapTerrain[x, y] = cell.GetHeightMapDataInCell(x % WorldManager.CELL_HMAP_RESOLUTION,
-                                y % WorldManager.CELL_HMAP_RESOLUTION);
-                        }
+                            for (var inY = 0; inY < WorldManager.CELL_HMAP_RESOLUTION; inY++)
+                            {
+                                var x = cellX * WorldManager.CELL_HMAP_RESOLUTION + inX;
+                                var y = cellY * WorldManager.CELL_HMAP_RESOLUTION + inY;
+                                hmapTerrain[x, y] = cell.GetHeightMapDataInCell(x % WorldManager.CELL_HMAP_RESOLUTION,
+                                    y % WorldManager.CELL_HMAP_RESOLUTION);
+                            }
                     }
 
                     if (AppConfiguration.Instance.World.PreLoadTerrain)
@@ -802,6 +793,15 @@ namespace AAEmu.Game.Core.Managers.World
 
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposing || Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
             try
             {
                 _physWorld?.Dispose();

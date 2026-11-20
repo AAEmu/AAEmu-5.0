@@ -29,7 +29,6 @@ public class SCSkillFiredPacket : GamePacket
     private bool _leftHand; // скилл 3 анимация 4 и 87
     private bool _twoHand;
     private bool _shield;
-    private bool _bow; // по идее скилл 4
 
     private readonly Character _character;
     private readonly int _fireAnimId;

@@ -110,8 +110,9 @@ public class CharacterOnlineTrackingTask : Task
     private void Perform60SecondCalculations(Character character, uint deltaSeconds)
     {
         // You can add any other 60-second calculations you need here
-        for (var index = 0; index < character.ScheduleItems.Count; index++)
+        if (character.ScheduleItems.Count > 0)
         {
+            const int index = 0;
             var scheduleItem = AccountManager.Instance.GetDivineClock(character.AccountId, character.ScheduleItems[index].ScheduleItemId);
             if (scheduleItem is not null)
             {
@@ -133,7 +134,7 @@ public class CharacterOnlineTrackingTask : Task
             // Update Account Divine Clock time
             AccountManager.Instance.UpdateDivineClock(character.AccountId, character.ScheduleItems[index].ScheduleItemId, character.ScheduleItems[index].Cumulated, (sbyte)character.ScheduleItems[index].Gave);
             character.SendPacket(new SCScheduleItemUpdatePacket(character.ScheduleItems));
-            break; // отправляет сразу инфу об всех предметах
+            // Send the full list after updating the first schedule item, matching the previous loop behavior.
         }
     }
 

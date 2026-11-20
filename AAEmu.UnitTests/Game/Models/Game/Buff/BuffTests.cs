@@ -14,17 +14,17 @@ namespace AAEmu.UnitTests.Game.Models.Game.Buff
 
         public new double GetTick() => 200;
 
-        public virtual void Start(BaseUnit caster, BaseUnit owner, AAEmu.Game.Models.Game.Skills.Buff buff)
+        public new virtual void Start(BaseUnit caster, BaseUnit owner, AAEmu.Game.Models.Game.Skills.Buff buff)
         {
             // Реализация для тестов
         }
 
-        public virtual void TimeToTimeApply(BaseUnit caster, BaseUnit owner, AAEmu.Game.Models.Game.Skills.Buff buff)
+        public new virtual void TimeToTimeApply(BaseUnit caster, BaseUnit owner, AAEmu.Game.Models.Game.Skills.Buff buff)
         {
             // Реализация для тестов
         }
 
-        public virtual void Dispel(BaseUnit caster, BaseUnit owner, AAEmu.Game.Models.Game.Skills.Buff buff, bool replaced = false)
+        public new virtual void Dispel(BaseUnit caster, BaseUnit owner, AAEmu.Game.Models.Game.Skills.Buff buff, bool replaced = false)
         {
             // Реализация для тестов
         }

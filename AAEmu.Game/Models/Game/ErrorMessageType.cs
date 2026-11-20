@@ -1,4 +1,6 @@
-﻿public enum ErrorMessageType : short
+// Keep the legacy global enum name used throughout packets and scripts.
+#pragma warning disable CA1050
+public enum ErrorMessageType : short
 {
     // updated to version 5.0.7.0
     Invalid = -1, // invalid

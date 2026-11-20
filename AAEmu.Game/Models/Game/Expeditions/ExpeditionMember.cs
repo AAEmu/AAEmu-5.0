@@ -87,7 +87,7 @@ public class ExpeditionMember : PacketMarshaler
         if (character == null)
         {
             var characterInfo = WorldManager.Instance.GetOfflineCharacterInfo(characterId);
-            var position = new Transform(null, null, characterInfo.Transform.WorldId, characterInfo.Transform.ZoneId, 1, characterInfo.Transform.World.Position.X, characterInfo.Transform.World.Position.Y, characterInfo.Transform.World.Position.Z, 0, 0, 0);
+            using var position = new Transform(null, null, characterInfo.Transform.WorldId, characterInfo.Transform.ZoneId, 1, characterInfo.Transform.World.Position.X, characterInfo.Transform.World.Position.Y, characterInfo.Transform.World.Position.Z, 0, 0, 0);
             Position = position.World.Position;
             ZoneId = position.ZoneId;
 

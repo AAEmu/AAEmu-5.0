@@ -1,4 +1,6 @@
-﻿using System;
+// Family remains global because compatibility callers use global::Family.
+#pragma warning disable CA1050
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using AAEmu.Commons.Network;

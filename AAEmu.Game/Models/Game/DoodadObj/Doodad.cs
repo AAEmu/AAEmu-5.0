@@ -868,6 +868,8 @@ public class Doodad : BaseUnit
     {
         TryCancelFuncTask();
 
+        // The event callback owns the timer until it fires and disposes it.
+#pragma warning disable CA2000
         var timer = new System.Timers.Timer(5);
         timer.AutoReset = false;
         timer.Elapsed += (sender, e) =>
@@ -876,6 +878,7 @@ public class Doodad : BaseUnit
             timer.Dispose();
         };
         timer.Start();
+#pragma warning restore CA2000
     }
 
     public override void BroadcastPacket(GamePacket packet, bool self)

@@ -1,5 +1,7 @@
 ﻿// https://lsreg.ru/realizaciya-algoritma-poiska-a-na-c/
 
+#nullable enable annotations
+
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;

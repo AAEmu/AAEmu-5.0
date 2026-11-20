@@ -193,7 +193,7 @@ public class ItemContainer
         // No max size defined, get the highest number and add one
         if (_containerSize < 0)
         {
-            var highestSlot = Items.Any() ? Items.Max(i => i.Slot) : -1;
+            var highestSlot = Items.Count > 0 ? Items.Max(i => i.Slot) : -1;
             highestSlot++;
             return preferredSlot > highestSlot ? preferredSlot : highestSlot;
         }
@@ -528,7 +528,7 @@ public class ItemContainer
         }
 
         // Item Tasks
-        if (sourceContainer?.ContainerType is not (SlotType.MailAttachment and SlotType.Auction))
+        if (sourceContainer?.ContainerType is not (SlotType.MailAttachment or SlotType.Auction))
         {
             if (sourceContainer is not null && sourceContainer != this)
             {

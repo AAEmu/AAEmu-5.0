@@ -24,7 +24,6 @@ public class SCUnitEquipmentsChangedPacket : GamePacket
 
     public override PacketStream Write(PacketStream stream)
     {
-        var index = 0;
         var ItemFlags = 0;
 
         stream.WriteBc(_objectId);

@@ -58,6 +58,9 @@ public class FollowPathBehavior : BaseCombatBehavior
             npc.Events.OnCombatStarted(this, new OnCombatStartedArgs { Owner = npc, Target = npc });
         }
 
+        // Preserve the configured AI parameters while this behavior is active.
+        _aiParams = Ai.Param as AlmightyNpcAiParams;
+
         // Set path following state
         Ai.Param = _aiParams;
         EnablePathFollowing();

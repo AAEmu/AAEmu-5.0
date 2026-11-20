@@ -1,4 +1,6 @@
-﻿using System;
+// Preserve the legacy global AttributeWeight type used by game data templates.
+#pragma warning disable CA1050
+using System;
 using System.Linq;
 using AAEmu.Game.Models.Game.Units;
 using Newtonsoft.Json.Linq;

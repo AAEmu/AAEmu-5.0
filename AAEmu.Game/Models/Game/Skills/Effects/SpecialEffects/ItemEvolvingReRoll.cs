@@ -66,7 +66,7 @@ public class ItemEvolvingReRoll : SpecialEffectAction
 
         if (changeIndex < 0 || changeIndex >= AttributeSlotCount)
         {
-            Logger.Warn($"ItemEvolvingReRoll: invalid changeIndex={changeIndex}, value1={value1}, skillObject={skillObject?.GetType().Name ?? "null"}.");
+            Logger.Warn($"ItemEvolvingReRoll: invalid changeIndex={changeIndex}, value1={value1}, skillObject={skillObject.GetType().Name}.");
             return;
         }
 

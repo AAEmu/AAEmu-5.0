@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using System.Threading.Tasks;
 using AAEmu.Game.Models.Game.NavMesh;
 using Xunit;
 
@@ -8,10 +9,10 @@ namespace AAEmu.UnitTests.Game.Models.Game.NavMesh;
 public class NavigationMeshCollectorTests
 {
     [Fact]
-    public void GetTrianglesInRadius_PointInsideTriangle_ReturnsTriangle()
+    public async Task GetTrianglesInRadius_PointInsideTriangle_ReturnsTriangle()
     {
         // Arrange
-        var collector = new NavigationMeshCollector();
+        using var collector = new NavigationMeshCollector();
         uint zoneId = 1;
         var triangle = new NavMeshTriangle
         {
@@ -21,7 +22,7 @@ public class NavigationMeshCollectorTests
             C = new Vector3(5, 10, 0)
         };
         collector.AddSample(zoneId, triangle.A, triangle.B, triangle.C);
-        collector.ForceCompactionAsync().Wait();
+        await collector.ForceCompactionAsync();
 
         // Act - проверяем точку внутри треугольника
         var center = new Vector3(5, 5, 0);
@@ -38,10 +39,10 @@ public class NavigationMeshCollectorTests
     }
 
     [Fact]
-    public void GetTrianglesInRadius_PointNearVertex_ReturnsTriangle()
+    public async Task GetTrianglesInRadius_PointNearVertex_ReturnsTriangle()
     {
         // Arrange
-        var collector = new NavigationMeshCollector();
+        using var collector = new NavigationMeshCollector();
         uint zoneId = 1;
         var triangle = new NavMeshTriangle
         {
@@ -51,7 +52,7 @@ public class NavigationMeshCollectorTests
             C = new Vector3(5, 10, 0)
         };
         collector.AddSample(zoneId, triangle.A, triangle.B, triangle.C);
-        collector.ForceCompactionAsync().Wait();
+        await collector.ForceCompactionAsync();
 
         // Act - проверяем точку рядом с вершиной
         var center = new Vector3(0.5f, 0.5f, 0);
@@ -65,10 +66,10 @@ public class NavigationMeshCollectorTests
     }
 
     [Fact]
-    public void GetTrianglesInRadius_DifferentZLevels_ReturnsCorrectTriangle()
+    public async Task GetTrianglesInRadius_DifferentZLevels_ReturnsCorrectTriangle()
     {
         // Arrange
-        var collector = new NavigationMeshCollector();
+        using var collector = new NavigationMeshCollector();
         uint zoneId = 1;
 
         // Треугольник на высоте 0
@@ -83,7 +84,7 @@ public class NavigationMeshCollectorTests
             new Vector3(10, 0, 10),
             new Vector3(5, 10, 10));
 
-        collector.ForceCompactionAsync().Wait();
+        await collector.ForceCompactionAsync();
 
         // Act - проверяем точку на уровне z=10
         var center = new Vector3(5, 5, 10);
@@ -97,10 +98,10 @@ public class NavigationMeshCollectorTests
     }
 
     [Fact]
-    public void GetTrianglesInRadius_AdjacentTriangles_ReturnsCompactedResult()
+    public async Task GetTrianglesInRadius_AdjacentTriangles_ReturnsCompactedResult()
     {
         // Arrange
-        var collector = new NavigationMeshCollector();
+        using var collector = new NavigationMeshCollector();
         uint zoneId = 1;
 
         // Добавляем два смежных треугольника на одной высоте
@@ -114,7 +115,7 @@ public class NavigationMeshCollectorTests
             new Vector3(5, 5, 0),
             new Vector3(0, 5, 0));
 
-        collector.ForceCompactionAsync().Wait();
+        await collector.ForceCompactionAsync();
 
         // Act - проверяем точку между треугольниками
         var center = new Vector3(2.5f, 2.5f, 0);
@@ -133,10 +134,10 @@ public class NavigationMeshCollectorTests
     }
 
     [Fact]
-    public void GetTrianglesInRadius_PointOutside_ReturnsEmpty()
+    public async Task GetTrianglesInRadius_PointOutside_ReturnsEmpty()
     {
         // Arrange
-        var collector = new NavigationMeshCollector();
+        using var collector = new NavigationMeshCollector();
         uint zoneId = 1;
         var triangle = new NavMeshTriangle
         {
@@ -146,7 +147,7 @@ public class NavigationMeshCollectorTests
             C = new Vector3(5, 10, 0)
         };
         collector.AddSample(zoneId, triangle.A, triangle.B, triangle.C);
-        collector.ForceCompactionAsync().Wait();
+        await collector.ForceCompactionAsync();
 
         // Act - проверяем точку далеко от треугольника
         var center = new Vector3(100, 100, 0);
@@ -163,7 +164,7 @@ public class NavigationMeshCollectorTests
     public void GetTrianglesInRadius_InvalidRadius_ThrowsArgumentException(float radius)
     {
         // Arrange
-        var collector = new NavigationMeshCollector();
+        using var collector = new NavigationMeshCollector();
         var center = new Vector3(0, 0, 0);
 
         // Act & Assert
@@ -171,10 +172,10 @@ public class NavigationMeshCollectorTests
     }
 
     [Fact]
-    public void GetTrianglesInRadius_DifferentZones_ReturnsOnlyRequestedZone()
+    public async Task GetTrianglesInRadius_DifferentZones_ReturnsOnlyRequestedZone()
     {
         // Arrange
-        var collector = new NavigationMeshCollector();
+        using var collector = new NavigationMeshCollector();
 
         // Добавляем треугольники в разные зоны
         collector.AddSample(1,
@@ -187,7 +188,7 @@ public class NavigationMeshCollectorTests
             new Vector3(10, 0, 0),
             new Vector3(5, 10, 0));
 
-        collector.ForceCompactionAsync().Wait();
+        await collector.ForceCompactionAsync();
 
         // Act
         var center = new Vector3(5, 5, 0);

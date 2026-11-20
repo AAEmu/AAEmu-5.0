@@ -35,7 +35,7 @@ public sealed class Shipyard : Unit
         }
     }
 
-    public bool IsDirty { get => _isDirty; set => _isDirty = value; }
+    public new bool IsDirty { get => _isDirty; set => _isDirty = value; }
     public int AllAction { get => _allAction; set { _allAction = value; _isDirty = true; } }
     public int BaseAction
     {

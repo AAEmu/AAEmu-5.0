@@ -121,7 +121,7 @@ public class FlytrapAttackBehavior : BaseCombatBehavior
         PickSkillAndUseIt(SkillUseConditionKind.InCombat, Ai.Owner.CurrentTarget, targetDist);
     }
 
-    private void MoveInRange(BaseUnit target, TimeSpan delta)
+    private new void MoveInRange(BaseUnit target, TimeSpan delta)
     {
         if (Ai?.Owner?.Gimmick == null)
             return;

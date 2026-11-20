@@ -14,7 +14,7 @@ namespace AAEmu.UnitTests.Game.Models.Game.Char;
 
 public class CharacterAppellationsTests
 {
-    private class CapturingCharacterMock : Character
+    private sealed class CapturingCharacterMock : Character
     {
         public GamePacket LastBroadcastedPacket { get; private set; }
 

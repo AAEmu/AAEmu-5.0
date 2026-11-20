@@ -21,7 +21,6 @@ namespace AAEmu.Commons.Cryptography
     public class EncryptionManager : Singleton<EncryptionManager>
     {
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-        private static readonly int DwKeySize = 1024;
         // Dictionary of valid keys bound to ConnectionId (unique per session)
         // This prevents encryption mismatches when same account connects from multiple sessions
         private Dictionary<uint, ConnectionKeychain> ConnectionKeys { get; set; }

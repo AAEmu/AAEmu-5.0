@@ -36,11 +36,12 @@ public class AStarPathFindingSubCommand : SubCommandBase
             var path = npc.Ai.PathNode.FindPath(npc.Ai.Owner.ParentWorld, npc.Ai.PathNode.StartPointPos, npc.Ai.PathNode.EndPointPos);
             npc.Ai.PathNode.FoundPath = new Queue<Vector3>(path);
 
-            character.SendDebugMessage($"AStar: points found Total: {npc.Ai.PathNode.FoundPath?.Count ?? 0}");
-            if (npc.Ai.PathNode.FoundPath != null)
+            var foundPath = npc.Ai.PathNode.FoundPath;
+            character.SendDebugMessage($"AStar: points found Total: {foundPath.Count}");
+            if (foundPath.Count > 0)
             {
                 var i = 0;
-                foreach (var point in npc.Ai.PathNode.FoundPath)
+                foreach (var point in foundPath)
                 {
                     character.SendDebugMessage($"AStar: point {i} coordinates X:{point.X}, Y:{point.Y}, Z:{point.Z}");
                     i++;

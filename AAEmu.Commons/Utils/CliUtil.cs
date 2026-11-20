@@ -97,6 +97,9 @@ namespace AAEmu.Commons.Utils
 
         public static void LoadingTitle()
         {
+            if (!OperatingSystem.IsWindows())
+                return;
+
             if (!Console.Title.StartsWith("* "))
             {
                 Console.Title = "* " + Console.Title;
@@ -105,6 +108,9 @@ namespace AAEmu.Commons.Utils
 
         public static void RunningTitle()
         {
+            if (!OperatingSystem.IsWindows())
+                return;
+
             Console.Title = Console.Title.TrimStart('*', ' ');
         }
 
@@ -129,7 +135,10 @@ namespace AAEmu.Commons.Utils
         /// </summary>
         public static bool CheckAdmin()
         {
-            var id = WindowsIdentity.GetCurrent();
+            if (!OperatingSystem.IsWindows())
+                return false;
+
+            using var id = WindowsIdentity.GetCurrent();
             var principal = new WindowsPrincipal(id);
 
             return principal.IsInRole(WindowsBuiltInRole.Administrator);

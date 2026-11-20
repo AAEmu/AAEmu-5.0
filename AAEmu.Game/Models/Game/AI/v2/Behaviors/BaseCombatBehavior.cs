@@ -329,8 +329,7 @@ public abstract class BaseCombatBehavior : Behavior
                     if (pathingEnabled && directFallback && Ai.Owner.UnitIsVisible(Ai.Owner.CurrentTarget))
                     {
                         // Mark so /pathmob can see we are not on a navmesh path.
-                        if (Ai.PathNode != null)
-                            Ai.PathNode.LastStatus = PathStatus.DirectFallback;
+                        Ai.PathNode.LastStatus = PathStatus.DirectFallback;
                         Ai.Owner.MoveTowards(targetPosition, (float)speed, moveFlags, range);
                     }
                     else if (!pathingEnabled)

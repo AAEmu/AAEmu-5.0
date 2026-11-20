@@ -12,6 +12,8 @@ using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Models.Game.World.Transform;
 using NLog;
 
+#nullable enable annotations
+
 namespace AAEmu.Game.Models.Game.NPChar;
 
 public class NpcSpawnerNpc : Spawner<Npc>

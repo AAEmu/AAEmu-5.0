@@ -1,4 +1,6 @@
-﻿using System;
+// Preserve the global effect name resolved from existing skill data.
+#pragma warning disable CA1050
+using System;
 
 using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Core.Packets.G2C;

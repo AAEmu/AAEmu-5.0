@@ -870,7 +870,8 @@ public class AuctionManager : Singleton<AuctionManager>
         }
         else
         {
-            var res = GetLast14AuctionSoldByItemId(MySQL.CreateConnection(), key);
+            using var connection = MySQL.CreateConnection();
+            var res = GetLast14AuctionSoldByItemId(connection, key);
             if (res.Count > 0)
             {
                 result = res;
@@ -918,7 +919,7 @@ public class AuctionManager : Singleton<AuctionManager>
             WHERE 
                 rn <= 14";
 
-        var command = new MySqlCommand(query, connection);
+        using var command = new MySqlCommand(query, connection);
         command.Parameters.AddWithValue("@itemTemplateId", key.itemTemplateId);
         command.Parameters.AddWithValue("@itemGradeId", key.itemGradeId);
 
@@ -988,7 +989,7 @@ public class AuctionManager : Singleton<AuctionManager>
                 WHERE 
                     rn <= 14";
 
-        var command = new MySqlCommand(query, connection);
+        using var command = new MySqlCommand(query, connection);
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -1044,7 +1045,7 @@ public class AuctionManager : Singleton<AuctionManager>
         }
         catch (Exception ex)
         {
-            throw new Exception("Failed to save solds data to the database.", ex);
+            throw new InvalidOperationException("Failed to save solds data to the database.", ex);
         }
     }
 

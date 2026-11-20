@@ -13,6 +13,8 @@ using NLog;
 using TriangleNet.Geometry;
 using TriangleNet.Meshing;
 
+#nullable enable annotations
+
 namespace AAEmu.Game.Models.Game.NavMesh
 {
     /// <summary>
@@ -27,7 +29,7 @@ namespace AAEmu.Game.Models.Game.NavMesh
         private readonly Timer _flushTimer;
         private readonly CancellationTokenSource _cancellationTokenSource;
         private readonly SemaphoreSlim _compactionLock;
-        private bool _disposed;
+        private int _disposed;
 
         // Statistics tracking
         private long _totalTrianglesProcessed;
@@ -61,7 +63,7 @@ namespace AAEmu.Game.Models.Game.NavMesh
         /// </summary>
         public bool AddSample(uint zoneId, Vector3 a, Vector3 b, Vector3 c)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
+            if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
 
             if (zoneId == 0)
                 throw new ArgumentException("Zone ID cannot be 0", nameof(zoneId));
@@ -93,7 +95,7 @@ namespace AAEmu.Game.Models.Game.NavMesh
         /// </summary>
         public List<NavMeshTriangle> GetTrianglesInRadius(uint zoneId, Vector3 center, float radius)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
+            if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
             if (radius <= 0)
                 throw new ArgumentException("Radius must be positive", nameof(radius));
 
@@ -154,7 +156,7 @@ namespace AAEmu.Game.Models.Game.NavMesh
         /// </summary>
         public List<NavMeshTriangle> GetRawTrianglesInRadius(uint zoneId, Vector3 center, float radius)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
+            if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
 
             if (radius <= 0)
                 throw new ArgumentException("Radius must be positive", nameof(radius));
@@ -179,7 +181,7 @@ namespace AAEmu.Game.Models.Game.NavMesh
         /// </summary>
         public async Task ForceCompactionAsync()
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
+            if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(NavigationMeshCollector));
 
             await _compactionLock.WaitAsync();
             try
@@ -533,7 +535,7 @@ namespace AAEmu.Game.Models.Game.NavMesh
 
         private async void FlushCacheToDatabase(object _)
         {
-            if (_disposed) return;
+            if (Volatile.Read(ref _disposed) != 0) return;
 
             try
             {
@@ -631,7 +633,14 @@ namespace AAEmu.Game.Models.Game.NavMesh
 
         public void Dispose()
         {
-            if (_disposed) return;
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposing || Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
 
             _cancellationTokenSource.Cancel();
             _flushTimer?.Dispose();
@@ -639,7 +648,6 @@ namespace AAEmu.Game.Models.Game.NavMesh
             _compactionLock.Dispose();
             _rawCache.Clear();
             _aggregatedCache.Clear();
-            _disposed = true;
         }
     }
 

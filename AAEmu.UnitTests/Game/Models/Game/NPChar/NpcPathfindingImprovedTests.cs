@@ -31,7 +31,7 @@ using Xunit;
 
 namespace AAEmu.UnitTests.Game.Models.Game.NPChar;
 
-public class NpcPathfindingImprovedTests : IDisposable
+public sealed class NpcPathfindingImprovedTests : IDisposable
 {
     private static int s_nextId = 19000;
     private readonly List<uint> _registeredWorldIds = [];

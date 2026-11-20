@@ -888,7 +888,7 @@ namespace AAEmu.Game.GameData
             return result;
         }
 
-        private static bool IsEligibleProductionChain(IReadOnlyList<int> chain)
+        private static bool IsEligibleProductionChain(List<int> chain)
         {
             if (chain.Count == 0)
             {
@@ -1184,7 +1184,7 @@ namespace AAEmu.Game.GameData
                 : eligibleQuestIds.Select(questId => new List<int> { questId }).ToList();
         }
 
-        private static List<List<int>> BuildDungeonQuestChains(IReadOnlyList<int> eligibleQuestIds)
+        private static List<List<int>> BuildDungeonQuestChains(List<int> eligibleQuestIds)
         {
             var result = new List<List<int>>();
             var index = 0;

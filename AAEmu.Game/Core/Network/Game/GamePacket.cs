@@ -116,7 +116,7 @@ public abstract class GamePacket : PacketBase<GameConnection>
             {
                 Logger.Error("UNKNOWN OPCODE FOR PACKET");
                 Logger.Debug($"GamePacket: S->C type [{Level}:{TypeId:X3}] C:[{count}:{EncryptionManager.Instance.GetSCMessageCount(Connection.Id, Connection.AccountId)}] {ToString()?.Substring(23)}{Verbose()}");
-                throw new SystemException();
+                throw new InvalidOperationException("Unknown game packet opcode.");
             }
             if (EncryptionManager.Instance.GetSCMessageCount(Connection.Id, Connection.AccountId) == count && Level == 5)
             {
@@ -141,7 +141,7 @@ public abstract class GamePacket : PacketBase<GameConnection>
             {
                 Logger.Error("UNKNOWN OPCODE FOR PACKET");
                 Logger.Debug($"GamePacket: S->C type [{Level}:{TypeId:X3}] {ToString()?.Substring(23)}{Verbose()}");
-                throw new SystemException();
+                throw new InvalidOperationException("Unknown game packet opcode.");
             }
 
             try

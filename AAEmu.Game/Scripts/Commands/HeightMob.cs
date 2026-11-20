@@ -12,6 +12,8 @@ using AAEmu.Game.Utils.Scripts;
 
 using NLog;
 
+#nullable enable annotations
+
 namespace AAEmu.Game.Scripts.Commands;
 
 /// <summary>

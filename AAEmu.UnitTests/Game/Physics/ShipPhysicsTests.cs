@@ -620,7 +620,7 @@ public class ShipPhysicsTests
     private static (Jitter2.World world, Buoyancy buoyancy, ShipController ctrl, Slave slave)
         BuildShipScenario(DateTime spawnTime, float portalTime = 10f)
     {
-        var world = new Jitter2.World();
+        using var world = new Jitter2.World();
 
         // FluidBox: water surface at physics Y = 100 (game Z = 100)
         var buoyancy = new Buoyancy(world)
@@ -727,7 +727,7 @@ public class ShipPhysicsTests
         // PhysicsManager.AddShip() must therefore explicitly set it to false to prevent
         // the one-step gravity window that caused the spawn-dive bug.
 
-        var world = new Jitter2.World();
+        using var world = new Jitter2.World();
         var ctrl = new ShipController(world, MakeTestShipModel());
 
         ctrl.Build(new JVector(0f, 100f, 0f), JQuaternion.Identity);

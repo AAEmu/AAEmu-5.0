@@ -114,23 +114,10 @@ public class UnitMoveType : MoveType
             stream.Write(ClimbData);
         if ((short)ActorFlags < 0)
         {
-            var type = 0;
             stream.Write((byte)0); // type
             stream.Write((short)0); // posx
             stream.Write((short)0); // posy
             stream.Write((short)0); // posz
-            if (type == 1)
-            {
-                stream.WriteBc(0u); // unk1
-            }
-            else if (type == 2)
-            {
-                stream.WriteBc(0u); // unk2
-            }
-            else if (type == 3)
-            {
-                stream.WriteBc(0u); // unk3
-            }
         }
         if ((ActorFlags & 0x100) != 0)
             stream.Write(MaxPushedUnitId);

@@ -48,6 +48,7 @@ public class SCUnitStatePacket : GamePacket
                 {
                     Slave when _unit.ModelId == 895 => ModelPostureType.TurretState, // Harpoon
                     Slave => ModelPostureType.None, // Ship
+                    _ => ModelPostureType.None,
                 };
 
                 break;

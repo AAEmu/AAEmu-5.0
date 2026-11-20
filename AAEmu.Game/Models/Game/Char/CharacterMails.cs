@@ -280,7 +280,7 @@ public class CharacterMails
                             }
 
                             // Should technically never fail because of previous free slot check
-                            throw new Exception("GetAttachmentFailedAddToBag");
+                            throw new InvalidOperationException("GetAttachmentFailedAddToBag");
                         }
 
                         // Bag Full

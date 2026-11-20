@@ -319,12 +319,9 @@ public class BuffTemplate
             var scTemplate = SkillManager.Instance.GetEffectTemplate(SkillControllerId, "SkillController") as SkillControllerTemplate;
             var scTarget = caster ?? owner;
             var controller = SkillControllers.SkillController.CreateSkillController(scTemplate, owner, scTarget);
-            if (controller != null)
-            {
-                ownerUnit.ActiveSkillController?.End();
-                ownerUnit.ActiveSkillController = controller;
-                controller.Execute();
-            }
+            ownerUnit.ActiveSkillController?.End();
+            ownerUnit.ActiveSkillController = controller;
+            controller.Execute();
         }
 
         // Special properties handling

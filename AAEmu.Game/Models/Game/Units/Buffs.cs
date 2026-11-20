@@ -38,7 +38,7 @@ public class Buffs : IBuffs
         _toleranceCounters = new Dictionary<uint, BuffToleranceCounter>();
     }
 
-    private IEnumerable<Buff> GetEffectsCopy()
+    private Buff[] GetEffectsCopy()
     {
         lock (_lock)
         {

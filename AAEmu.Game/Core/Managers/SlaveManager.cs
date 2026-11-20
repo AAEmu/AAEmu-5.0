@@ -68,7 +68,6 @@ public class SlaveManager : Singleton<SlaveManager>
 
     private object _slaveListLock;
     private Dictionary<uint, List<SlaveEquipSlots>> _slaveEquipSlots; // slaveId -> List<SlaveEquipSlots>
-    private Dictionary<uint, List<SlaveEquipSlots>> _slaveEquipedSlots; // slaveId -> List<SlaveEquipSlots>
 
     private readonly Dictionary<Slave, (bool IsNear, long LastCheck)> _proximityCacheShip = new();
     private readonly Stopwatch _stopwatch = new();

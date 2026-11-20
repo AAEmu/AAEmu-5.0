@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // ФАЙЛ: NpcPathfindingImproved.cs
 // Локальный обход doodad и forbidden-area препятствий для NPC.
 //
@@ -2148,7 +2148,6 @@ public partial class Npc
         moveType.Time = (uint)(DateTime.UtcNow - DateTime.UtcNow.Date).TotalMilliseconds;
         var moved = CheckMovedPosition(oldPosition);
 
-        const float MovementBroadcastRadius = 200f;
         BroadcastPacket(new SCOneUnitMovementPacket(ObjId, moveType), true);
         if (perfTimings != null && moveApplyStartTicks != 0)
             perfTimings.MoveApplyTicks += System.Diagnostics.Stopwatch.GetTimestamp() - moveApplyStartTicks;

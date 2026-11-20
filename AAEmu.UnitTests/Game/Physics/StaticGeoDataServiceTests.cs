@@ -157,7 +157,7 @@ public class StaticGeoDataServiceTests
         index = new WorldStaticGeometryIndex();
 
         // Build a PhysicsManager bypassing its constructor (avoids AppConfiguration access).
-        var physics = (PhysicsManager)System.Runtime.Serialization.FormatterServices
+        var physics = (PhysicsManager)System.Runtime.CompilerServices.RuntimeHelpers
             .GetUninitializedObject(typeof(PhysicsManager));
 
         // Inject the index into PhysicsManager's backing field (auto-property {get;} = new())
