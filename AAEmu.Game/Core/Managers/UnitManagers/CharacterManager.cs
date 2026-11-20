@@ -492,6 +492,12 @@ public class CharacterManager : Singleton<CharacterManager>
         for (var i = 0; i < character.Slots.Length; i++)
             character.Slots[i] = new ActionSlot();
 
+        foreach (var skill in SkillManager.Instance.GetDefaultSkills(character.Race, character.Gender))
+        {
+            if (skill.AddToSlot && skill.Slot < character.Slots.Length)
+                character.SetAction(skill.Slot, ActionSlotType.Spell, skill.Template.Id);
+        }
+
         var items = _abilityItems[ability1];
         SetEquipItemTemplate(character.Inventory, items.Items.Headgear, EquipmentItemSlot.Head, items.Items.HeadgearGrade);
         SetEquipItemTemplate(character.Inventory, items.Items.Necklace, EquipmentItemSlot.Neck, items.Items.NecklaceGrade);
@@ -517,15 +523,14 @@ public class CharacterManager : Singleton<CharacterManager>
             SetEquipItemTemplate(character.Inventory, bodyItems[i], (EquipmentItemSlot)(i + 19), 0);
         }
 
-        byte slot = 10;
+        var slot = 10;
         foreach (var item in items.Supplies)
         {
             character.Inventory.Bag.AcquireDefaultItem(ItemTaskType.Invalid, item.Id, item.Amount, item.Grade);
             //var createdItem = ItemManager.Instance.Create(item.Id, item.Amount, item.Grade);
             //character.Inventory.AddItem(Models.Game.Items.Actions.ItemTaskType.Invalid, createdItem);
 
-            character.SetAction(slot, ActionSlotType.ItemType, item.Id);
-            slot++;
+            SetNextStartingAction(character, ref slot, ActionSlotType.ItemType, item.Id);
         }
 
         items = _abilityItems[0];
@@ -536,8 +541,7 @@ public class CharacterManager : Singleton<CharacterManager>
                 //var createdItem = ItemManager.Instance.Create(item.Id, item.Amount, item.Grade);
                 //character.Inventory.AddItem(ItemTaskType.Invalid, createdItem);
 
-                character.SetAction(slot, ActionSlotType.ItemType, item.Id);
-                slot++;
+                SetNextStartingAction(character, ref slot, ActionSlotType.ItemType, item.Id);
             }
 
         character.Abilities = new CharacterAbilities(character);
@@ -548,21 +552,11 @@ public class CharacterManager : Singleton<CharacterManager>
             character.Actability.Actabilities.Add(id, new Actability(actabilityTemplate));
 
         character.Skills = new CharacterSkills(character);
-        foreach (var skill in SkillManager.Instance.GetDefaultSkills())
-        {
-            if (!skill.AddToSlot)
-                continue;
-            character.SetAction(skill.Slot, ActionSlotType.Spell, skill.Template.Id);
-        }
-
         slot = 1;
-        while (character.Slots[slot].Type != ActionSlotType.None)
-            slot++;
         foreach (var skill in SkillManager.Instance.GetStartAbilitySkills(character.Ability1))
         {
             character.Skills.AddSkill(skill, 1, false);
-            character.SetAction(slot, ActionSlotType.Spell, skill.Id);
-            slot++;
+            SetNextStartingAction(character, ref slot, ActionSlotType.Spell, skill.Id);
         }
 
         character.Appellations = new CharacterAppellations(character);
@@ -592,6 +586,18 @@ public class CharacterManager : Singleton<CharacterManager>
             // TODO release items...
             DeleteCharacterAssets(character, true);
         }
+    }
+
+    private static void SetNextStartingAction(Character character, ref int slot, ActionSlotType type, uint actionId)
+    {
+        while (slot < character.Slots.Length && character.Slots[slot].Type != ActionSlotType.None)
+            slot++;
+
+        if (slot == character.Slots.Length)
+            return;
+
+        character.SetAction((byte)slot, type, actionId);
+        slot++;
     }
 
     /// <summary>

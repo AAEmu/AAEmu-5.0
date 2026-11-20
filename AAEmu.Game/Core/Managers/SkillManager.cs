@@ -32,7 +32,8 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
 
     private Dictionary<uint, SkillTemplate> _skills;
     private Dictionary<uint, DefaultSkill> _defaultSkills;
-    private Dictionary<int, List<CharacterDefaultSkill>> _characterDefaultSkills;
+    private List<DefaultSkill> _globalDefaultSkills;
+    private Dictionary<(Race Race, Gender Gender), List<DefaultSkill>> _characterDefaultSkills;
     private List<uint> _commonSkills;
     private Dictionary<AbilityType, List<SkillTemplate>> _startAbilitySkills;
     private Dictionary<uint, PassiveBuffTemplate> _passiveBuffs;
@@ -115,6 +116,14 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
     public List<DefaultSkill> GetDefaultSkills()
     {
         return [.. _defaultSkills.Values];
+    }
+
+    public List<DefaultSkill> GetDefaultSkills(Race race, Gender gender)
+    {
+        if (_characterDefaultSkills.TryGetValue((race, gender), out var skills))
+            return [.. _globalDefaultSkills, .. skills];
+
+        return [.. _globalDefaultSkills];
     }
 
     public BuffTemplate GetBuffTemplate(uint id)
@@ -283,7 +292,8 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
 
         _skills = new Dictionary<uint, SkillTemplate>();
         _defaultSkills = new Dictionary<uint, DefaultSkill>();
-        _characterDefaultSkills = new Dictionary<int, List<CharacterDefaultSkill>>();
+        _globalDefaultSkills = [];
+        _characterDefaultSkills = [];
         _commonSkills = [];
         _startAbilitySkills = new Dictionary<AbilityType, List<SkillTemplate>>();
         _passiveBuffs = new Dictionary<uint, PassiveBuffTemplate>();
@@ -604,9 +614,16 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
             }
             Logger.Info("Loaded {0} heir skill details", _heirSkillDetails.Count);
 
+            var defaultSkillsById = new Dictionary<int, DefaultSkill>();
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT * FROM default_skills";
+                command.CommandText = """
+                                      SELECT ds.*, EXISTS (
+                                          SELECT 1 FROM character_default_skills cds
+                                          WHERE cds.default_skill_id = ds.id
+                                      ) AS character_specific
+                                      FROM default_skills ds
+                                      """;
                 command.Prepare();
                 using (var sqliteReader = command.ExecuteReader())
                 using (var reader = new SQLiteWrapperReader(sqliteReader))
@@ -625,26 +642,37 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                             SkillId = reader.GetInt32("skill_id"),
                         };
                         _defaultSkills.TryAdd(skill.Template.Id, skill);
+                        defaultSkillsById.Add(reader.GetInt32("id"), skill);
+                        if (!reader.GetBoolean("character_specific"))
+                            _globalDefaultSkills.Add(skill);
                     }
                 }
             }
 
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT * FROM character_default_skills";
+                command.CommandText = """
+                                      SELECT DISTINCT c.char_race_id, c.char_gender_id, cds.default_skill_id
+                                      FROM character_default_skills cds
+                                      JOIN characters c ON c.id = cds.character_id
+                                      ORDER BY cds.default_skill_id
+                                      """;
                 command.Prepare();
                 using (var sqliteReader = command.ExecuteReader())
                 using (var reader = new SQLiteWrapperReader(sqliteReader))
                 {
                     while (reader.Read())
                     {
-                        var characterDefaultSkill = new CharacterDefaultSkill();
-                        characterDefaultSkill.CharacterId = reader.GetInt32("character_id");
-                        characterDefaultSkill.DefaultSkillId = reader.GetInt32("default_skill_id");
+                        if (!defaultSkillsById.TryGetValue(reader.GetInt32("default_skill_id"), out var skill))
+                            continue;
 
-                        if (!_characterDefaultSkills.ContainsKey(characterDefaultSkill.CharacterId))
-                            _characterDefaultSkills[characterDefaultSkill.CharacterId] = new List<CharacterDefaultSkill>();
-                        _characterDefaultSkills[characterDefaultSkill.CharacterId].Add(characterDefaultSkill);
+                        var key = ((Race)reader.GetByte("char_race_id"), (Gender)reader.GetByte("char_gender_id"));
+                        if (!_characterDefaultSkills.TryGetValue(key, out var skills))
+                        {
+                            skills = [];
+                            _characterDefaultSkills.Add(key, skills);
+                        }
+                        skills.Add(skill);
                     }
                 }
             }
