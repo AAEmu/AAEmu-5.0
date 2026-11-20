@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Models;
 using AAEmu.Game.Utils.DB;
@@ -50,6 +51,9 @@ public class LocalizationManager : Singleton<LocalizationManager>
         var key = GetLookupKey(tblName, tblColumn, index);
         if (_translations.TryGetValue(key, out var translatedText))
         {
+            if (translatedText.Contains("DO NOT TRANSLATE", StringComparison.OrdinalIgnoreCase))
+                return fallbackValue;
+
             return translatedText == string.Empty ? fallbackValue : translatedText;
         }
 
