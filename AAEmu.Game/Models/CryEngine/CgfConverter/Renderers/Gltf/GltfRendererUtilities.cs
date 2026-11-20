@@ -1,38 +1,10 @@
 ﻿using System.Collections.Immutable;
 using BCnEncoder.Shared;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace CgfConverter.Renderers.Gltf;
 
 internal static class GltfRendererUtilities
 {
-    internal static Rgba32[] ToRgba32(this ColorRgba32[] raw)
-    {
-        var res = new Rgba32[raw.Length];
-        for (var i = 0; i < raw.Length; i++)
-        {
-            res[i].R = raw[i].r;
-            res[i].G = raw[i].g;
-            res[i].B = raw[i].b;
-            res[i].A = raw[i].a;
-        }
-
-        return res;
-    }
-
-    internal static Rgb24[] ToRgb24(this ColorRgba32[] raw)
-    {
-        var res = new Rgb24[raw.Length];
-        for (var i = 0; i < raw.Length; i++)
-        {
-            res[i].R = raw[i].r;
-            res[i].G = raw[i].g;
-            res[i].B = raw[i].b;
-        }
-
-        return res;
-    }
-
     internal static IEnumerable<string> StripCommonParentPaths(ICollection<string> fullNames)
     {
         var namesDepths = new List<List<string>>();

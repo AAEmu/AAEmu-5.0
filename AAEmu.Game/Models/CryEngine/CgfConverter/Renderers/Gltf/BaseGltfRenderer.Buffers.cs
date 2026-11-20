@@ -7,7 +7,6 @@ using BCnEncoder.Shared;
 using CgfConverter.Renderers.Gltf.Models;
 using CgfConverter.Renderers.MaterialTextures;
 using Newtonsoft.Json;
-using SixLabors.ImageSharp;
 
 namespace CgfConverter.Renderers.Gltf;
 
@@ -494,37 +493,7 @@ public partial class BaseGltfRenderer
         }
 
         using var ms = new MemoryStream();
-        if (newOpacity is not null)
-        {
-            var buf = raw.ToRgba32();
-            if (sourceAlphaMode == SourceAlphaModes.Enable)
-            {
-                for (var i = 0; i < buf.Length; i++)
-                    buf[i].A = (byte)(buf[i].A * newOpacity);
-            }
-            else
-            {
-                var newAlphaByte = (byte)(255 * newOpacity.Value);
-                for (var i = 0; i < buf.Length; i++)
-                    buf[i].A = newAlphaByte;
-            }
-
-            using var image = Image.LoadPixelData(buf, width, height);
-            image.SaveAsPng(ms);
-        }
-        else
-        {
-            if (sourceAlphaMode == SourceAlphaModes.Enable)
-            {
-                using var image = Image.LoadPixelData(raw.ToRgba32(), width, height);
-                image.SaveAsPng(ms);
-            }
-            else
-            {
-                using var image = Image.LoadPixelData(raw.ToRgb24(), width, height);
-                image.SaveAsPng(ms);
-            }
-        }
+        GltfPngWriter.Write(ms, raw, width, height, sourceAlphaMode == SourceAlphaModes.Enable, newOpacity);
 
         return AddTexture(baseName, "image/png", ms.ToArray());
     }
