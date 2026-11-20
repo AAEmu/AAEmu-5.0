@@ -27,6 +27,18 @@ public class ExperienceManager : Singleton<ExperienceManager>
         return mate ? levelTemplate?.TotalMateExp ?? 0 : levelTemplate?.TotalExp ?? 0;
     }
 
+    public bool TryGetExpForLevel(byte level, bool mate, out int experience)
+    {
+        if (!_levels.TryGetValue(level, out var template))
+        {
+            experience = 0;
+            return false;
+        }
+
+        experience = mate ? template.TotalMateExp : template.TotalExp;
+        return true;
+    }
+
     public byte GetLevelFromExp(int exp, bool mate = false)
     {
         // Loop the levels to find the level for a given exp value
@@ -66,6 +78,17 @@ public class ExperienceManager : Singleton<ExperienceManager>
     {
         var levelTemplate = _heirLevels.GetValueOrDefault(level);
         return levelTemplate?.ReqTotalExp ?? 0;
+    }
+
+    public bool TryGetStartingExpForHeirLevel(byte level, out uint experience)
+    {
+        experience = 0;
+        if (level == 0)
+            return true;
+
+        // Each row stores the experience needed to advance from that level.
+        experience = GetExpForHeirLevel((byte)(level - 1));
+        return experience > 0 && GetExpForHeirLevel(level) > experience;
     }
 
     public byte GetHeirLevelFromExp(uint exp)

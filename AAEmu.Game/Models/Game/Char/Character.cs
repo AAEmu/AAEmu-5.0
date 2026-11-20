@@ -1277,6 +1277,55 @@ public partial class Character : Unit, ICharacter
             QuestManager.Instance.DoOnLevelUpEvents(Connection.ActiveChar);
     }
 
+    /// <summary>
+    /// Sets level and experience directly for a GM command and reports whether heir progression changed.
+    /// </summary>
+    public bool SetLevelAndExperience(byte level, int experience, byte heirLevel, uint heirExperience)
+    {
+        var previousLevel = Level;
+        var previousHeirLevel = HeirLevel;
+        var heirChanged = heirLevel != HeirLevel || heirExperience != HeirExp;
+        var delta = experience - Experience;
+
+        Level = level;
+        Experience = experience;
+        HeirLevel = heirLevel;
+        HeirExp = heirExperience;
+
+        if (delta != 0)
+            SendPacket(new SCExpChangedPacket(ObjId, delta, false));
+        Abilities?.SetAllExp(experience);
+
+        if (level != previousLevel || heirChanged)
+        {
+            var previousHp = Hp;
+            var previousMp = Mp;
+            Hp = level > previousLevel ? MaxHp : Math.Min(Hp, MaxHp);
+            Mp = level > previousLevel ? MaxMp : Math.Min(Mp, MaxMp);
+
+            if (level != previousLevel)
+            {
+                Expedition?.OnCharacterRefresh(this);
+                BroadcastPacket(new SCLevelChangedPacket(ObjId, level), true);
+            }
+            if (Hp != previousHp || Mp != previousMp)
+                BroadcastPacket(new SCUnitPointsPacket(ObjId, Hp, Mp, HighAbilityRsc), true);
+
+            ResidentManager.Instance.AddResidenMemberInfo(this);
+        }
+
+        if (heirLevel > previousHeirLevel)
+            Achievements?.TrackAncestralLevel(heirLevel);
+        if (level > previousLevel)
+        {
+            Achievements?.TrackSnapshot(CharRecordKind.CharLevel, 0, 0, level);
+            if (Connection != null)
+                QuestManager.Instance.DoOnLevelUpEvents(this);
+        }
+
+        return heirChanged;
+    }
+
     public void CheckLevelUp()
     {
         var needExp = ExperienceManager.Instance.GetExpForLevel((byte)(Level + 1));

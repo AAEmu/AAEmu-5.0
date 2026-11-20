@@ -514,9 +514,9 @@ public sealed class Mate : Unit
     }
 
     /// <summary>
-    /// Update the Item Data if it was summoned by an item
+    /// Updates the stored experience and the summoning item's details.
     /// </summary>
-    private void UpdateMateItemData()
+    private void UpdateExperienceData()
     {
         if (ItemId > 0)
         {
@@ -528,6 +528,29 @@ public sealed class Mate : Unit
                 mateItem.IsDirty = true;
             }
         }
+
+        if (DbInfo != null)
+        {
+            DbInfo.Xp = Experience;
+            DbInfo.Level = Level;
+        }
+    }
+
+    public void SetLevelAndExperience(byte level, int experience)
+    {
+        var previousLevel = Level;
+        var delta = experience - Experience;
+        Level = level;
+        Experience = experience;
+        UpdateExperienceData();
+
+        if (delta != 0)
+            WorldManager.Instance.GetCharacterByObjId(OwnerObjId)?.SendPacket(new SCExpChangedPacket(ObjId, delta, false));
+
+        if (level != previousLevel)
+            BroadcastPacket(new SCLevelChangedPacket(ObjId, level), true);
+        if (level > previousLevel)
+            NotifyOwnerOfLevelUp();
     }
 
     /// <summary>
@@ -560,25 +583,27 @@ public sealed class Mate : Unit
             needExp = ExperienceManager.Instance.GetExpForLevel((byte)(Level + 1), true);
         }
 
-        UpdateMateItemData();
-        DbInfo.Xp = Experience;
-        DbInfo.Level = Level;
+        UpdateExperienceData();
 
         if (leveledUp)
         {
             BroadcastPacket(new SCLevelChangedPacket(ObjId, Level), true);
-            if (OwnerId > 0)
-            {
-                // Notify owner of the level up event
-                var owner = WorldManager.Instance.GetCharacterByObjId(OwnerObjId);
-                if (owner != null)
-                {
-                    owner.Achievements?.TrackMateLevel(TemplateId, Level);
-                    owner.Events.OnMateLevelUp(this, new OnMateLevelUpArgs());
-                }
-            }
+            NotifyOwnerOfLevelUp();
             //StartRegen();
         }
+    }
+
+    private void NotifyOwnerOfLevelUp()
+    {
+        if (OwnerId == 0)
+            return;
+
+        var owner = WorldManager.Instance.GetCharacterByObjId(OwnerObjId);
+        if (owner == null)
+            return;
+
+        owner.Achievements?.TrackMateLevel(TemplateId, Level);
+        owner.Events.OnMateLevelUp(this, new OnMateLevelUpArgs());
     }
 
     public override void AddVisibleObject(Character character)

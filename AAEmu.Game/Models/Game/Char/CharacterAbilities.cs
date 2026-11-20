@@ -72,6 +72,19 @@ public class CharacterAbilities
             Abilities[Owner.Ability3].Exp = Math.Min(Abilities[Owner.Ability3].Exp + exp, ExperienceManager.Instance.GetExpForLevel(55));
     }
 
+    internal void SetAllExp(int experience)
+    {
+        foreach (var (type, ability) in Abilities)
+        {
+            if (type is AbilityType.None or AbilityType.General || ability.Exp == experience)
+                continue;
+
+            var delta = experience - ability.Exp;
+            ability.Exp = experience;
+            Owner.SendPacket(new SCAbilityExpChangedPacket(Owner.ObjId, type, delta));
+        }
+    }
+
     public void Swap(AbilityType oldAbilityId, AbilityType abilityId)
     {
         Owner.Skills.Reset(oldAbilityId);

@@ -16,7 +16,7 @@ public partial class Character
     /// Запись высоты персонажа как высоту Npc с записью в файл npc_spawn.json
     /// </summary>
     /// <param name="character"></param>
-    internal static void TrackCharacterCoordinates(Character character)
+    public static void TrackCharacterCoordinates(Character character)
     {
         if (character.CurrentTarget is not Npc npc)
             return;

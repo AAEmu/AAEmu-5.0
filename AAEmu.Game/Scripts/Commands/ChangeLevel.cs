@@ -1,9 +1,7 @@
-﻿using AAEmu.Game.Core.Managers;
-using AAEmu.Game.Core.Packets.G2C;
+using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.Char;
-using AAEmu.Game.Models.Game.Skills;
-using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Utils.Scripts;
 
@@ -11,7 +9,7 @@ namespace AAEmu.Game.Scripts.Commands;
 
 public class ChangeLevel : ICommand
 {
-    public string[] CommandNames { get; set; } = new string[] { "level", "setlevel", "set_level", "change_level", "changelevel" };
+    public string[] CommandNames { get; set; } = ["level", "setlevel", "set_level", "change_level", "changelevel"];
 
     public void OnLoad()
     {
@@ -20,13 +18,14 @@ public class ChangeLevel : ICommand
 
     public string GetCommandLineHelp()
     {
-        return "(target) <level>";
+        return "(target) <level> [heir-level]";
     }
 
     public string GetCommandHelpText()
     {
-        return $"Adds experience points needed to reach target <level>\n" +
-               $"Allowed range is 2-{ExperienceManager.MaxPlayerLevel} and {ExperienceManager.MaxMateLevel} for pets\n";
+        return $"Sets the exact level and starting experience (1-{ExperienceManager.MaxPlayerLevel} for characters, " +
+               $"1-{ExperienceManager.MaxMateLevel} for pets).\n" +
+               $"Heir level is 0-{ExperienceManager.MaxPlayerHeirLevel} and defaults to 0 for characters.";
     }
 
     public void Execute(Character character, string[] args, IMessageOutput messageOutput)
@@ -34,97 +33,67 @@ public class ChangeLevel : ICommand
         if (args.Length == 0)
         {
             CommandManager.SendDefaultHelpText(this, messageOutput);
-            //character.SendDebugMessage("[Level] level: 1-100");
             return;
         }
 
-        var targetPlayer = WorldManager.GetTargetOrSelf(character, args[0], out var firstArg);
-
-        byte level = 0;
-        if (byte.TryParse(args[firstArg + 0], out var parseLevel))
+        var target = WorldManager.GetTargetOrSelf(character, args[0], out var firstArg);
+        var argumentCount = args.Length - firstArg;
+        if (argumentCount is < 1 or > 2)
         {
-            level = parseLevel;
+            CommandManager.SendDefaultHelpText(this, messageOutput);
+            return;
         }
 
-        if (character.CurrentTarget is Mate mate)
+        var mate = firstArg == 0 ? character.CurrentTarget as Mate : null;
+        var maxLevel = mate == null ? ExperienceManager.MaxPlayerLevel : ExperienceManager.MaxMateLevel;
+        var experienceManager = ExperienceManager.Instance;
+        if (!byte.TryParse(args[firstArg], out var level) || level < 1 || level > maxLevel)
         {
-            if (level <= 1 || level > ExperienceManager.MaxMateLevel)
+            CommandManager.SendErrorText(this, messageOutput, $"Allowed level range: 1-{maxLevel}.");
+            return;
+        }
+
+        if (!experienceManager.TryGetExpForLevel(level, mate != null, out var experience))
+        {
+            CommandManager.SendErrorText(this, messageOutput, $"No experience threshold is configured for level {level}.");
+            return;
+        }
+
+        if (mate != null)
+        {
+            if (argumentCount != 1)
             {
-                CommandManager.SendErrorText(this, messageOutput, $"Allowed level range: 2-{ExperienceManager.MaxMateLevel}|r");
+                CommandManager.SendErrorText(this, messageOutput, "Heir levels can only be set for characters.");
                 return;
             }
 
-            var expForTargetLevel = ExperienceManager.Instance.GetExpForLevel(level, true) - mate.Experience;
-            if (expForTargetLevel > 0)
-            {
-                mate.AddExp(expForTargetLevel);
-            }
-
-            if (level > mate.Level)
-            {
-                mate.BroadcastPacket(new SCLevelChangedPacket(mate.ObjId, level), true);
-            }
+            mate.SetLevelAndExperience(level, experience);
+            return;
         }
-        else
+
+        byte heirLevel = 0;
+        if (argumentCount == 2 && (!byte.TryParse(args[firstArg + 1], out heirLevel) ||
+                                  heirLevel > ExperienceManager.MaxPlayerHeirLevel))
         {
-            if (level <= 1 || level > ExperienceManager.MaxPlayerLevel)
-            {
-                CommandManager.SendErrorText(this, messageOutput, $"Allowed level range: 2-{ExperienceManager.MaxPlayerLevel}|r");
-                return;
-            }
+            CommandManager.SendErrorText(this, messageOutput,
+                $"Allowed heir level range: 0-{ExperienceManager.MaxPlayerHeirLevel}.");
+            return;
+        }
 
-            var maxExpToAdd = 0;
+        if (!experienceManager.TryGetStartingExpForHeirLevel(heirLevel, out var heirExperience))
+        {
+            CommandManager.SendErrorText(this, messageOutput, $"No experience threshold is configured for heir level {heirLevel}.");
+            return;
+        }
 
-            if (targetPlayer.Ability1 != AbilityType.None)
-            {
-                var expForA1 = ExperienceManager.Instance.GetExpNeededToGivenLevel(targetPlayer.Abilities.Abilities[targetPlayer.Ability1].Exp, level);
-                if (expForA1 > maxExpToAdd)
-                {
-                    maxExpToAdd = expForA1;
-                }
-            }
+        if (target.SetLevelAndExperience(level, experience, heirLevel, heirExperience))
+        {
+            const string refreshMessage = "Reconnect to refresh the displayed heir level.";
+            if (target != character)
+                target.SendMessage($"A GM set your heir level to {heirLevel}. {refreshMessage}");
 
-            if (targetPlayer.Ability2 != AbilityType.None)
-            {
-                var expForA2 = ExperienceManager.Instance.GetExpNeededToGivenLevel(targetPlayer.Abilities.Abilities[targetPlayer.Ability2].Exp, level);
-                if (expForA2 > maxExpToAdd)
-                {
-                    maxExpToAdd = expForA2;
-                }
-            }
-
-            if (targetPlayer.Ability3 != AbilityType.None)
-            {
-                var expForA3 = ExperienceManager.Instance.GetExpNeededToGivenLevel(targetPlayer.Abilities.Abilities[targetPlayer.Ability3].Exp, level);
-                if (expForA3 > maxExpToAdd)
-                {
-                    maxExpToAdd = expForA3;
-                }
-            }
-
-            var expForLevel = ExperienceManager.Instance.GetExpForLevel(level) - targetPlayer.Experience;
-            if (expForLevel > maxExpToAdd)
-            {
-                maxExpToAdd = expForLevel;
-            }
-
-            // Add maximum required xp to get to target levels
-            if (maxExpToAdd > 0)
-            {
-                targetPlayer.AddExp(maxExpToAdd, true);
-            }
-
-            // If the target level is bigger than player's current level, refill HP/MP and send level-up packet
-            if (level > targetPlayer.Level)
-            {
-                targetPlayer.Level = level;
-                targetPlayer.Experience = expForLevel;
-
-                targetPlayer.Hp = targetPlayer.MaxHp;
-                targetPlayer.Mp = targetPlayer.MaxMp;
-
-                targetPlayer.BroadcastPacket(new SCLevelChangedPacket(targetPlayer.ObjId, level), true);
-            }
+            CommandManager.SendNormalText(this, messageOutput,
+                $"Set {target.Name} to level {level}, heir level {heirLevel}. {refreshMessage}");
         }
     }
 }
