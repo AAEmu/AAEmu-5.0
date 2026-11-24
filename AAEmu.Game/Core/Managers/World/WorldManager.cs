@@ -1441,10 +1441,9 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
             FamilyManager.Instance.OnCharacterLogin(character);
         }
 
-        if (character.Race == Race.Warborn)
+        if (character.Race is Race.Warborn or Race.Hariharan)
         {
-            // The Warborn story requires this quest and the client map has no starter sphere for it.
-            character.Quests.StartWarbornFirstJourney(character.Transform.ZoneId);
+            character.Quests.StartFirstJourneyWithoutMapSphere(character.Transform.ZoneId);
         }
         else if (AppConfiguration.Instance.World.FirstJourneyEnable)
         {
@@ -1469,10 +1468,6 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
             case Race.Elf: // Elf
                 questId = 6840;
                 sphereId = 2322;
-                break;
-            case Race.Hariharan: // Hariharan
-                questId = 6842;
-                sphereId = 2324;
                 break;
             case Race.Ferre: // Ferre
                 questId = 6841;

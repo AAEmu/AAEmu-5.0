@@ -24,12 +24,9 @@ namespace AAEmu.Game.Models.Game.Char;
 
 public class CharacterQuests
 {
-    private const uint WarbornStartingZoneKey = 157;
-    private const uint WarbornFirstJourneyQuestId = 8228;
-    private const uint WarbornFirstJourneySphereId = 2600;
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private readonly List<uint> _removed;
-    private int _startingWarbornFirstJourney;
+    private int _startingFirstJourney;
 
     private Character Owner { get; set; }
     public Dictionary<uint, Quest> ActiveQuests { get; }
@@ -65,24 +62,36 @@ public class CharacterQuests
         return CompletedQuests.TryGetValue(questBlockId, out var questBlock) && questBlock.Body.Get(questBlockIndex);
     }
 
-    internal void StartWarbornFirstJourney(uint zoneKey)
+    internal void StartFirstJourneyWithoutMapSphere(uint zoneKey)
     {
-        if (zoneKey != WarbornStartingZoneKey || Owner.Race != Race.Warborn ||
-            Owner.Transform?.WorldId != WorldManager.DefaultWorldId)
+        var (questId, sphereId, firstChapterQuestId) = (Owner.Race, zoneKey) switch
+        {
+            (Race.Warborn, 157u) => (8228u, 2600u, 0u),
+            (Race.Hariharan, 187u) => (6842u, 2324u, 3505u),
+            _ => (0u, 0u, 0u)
+        };
+
+        if (questId == 0 || Owner.Transform?.WorldId != WorldManager.DefaultWorldId)
             return;
 
         // World entry and a zone change can both request the same quest.
-        if (Interlocked.CompareExchange(ref _startingWarbornFirstJourney, 1, 0) != 0)
+        if (Interlocked.CompareExchange(ref _startingFirstJourney, 1, 0) != 0)
             return;
 
         try
         {
-            if (!HasQuest(WarbornFirstJourneyQuestId) && !HasQuestCompleted(WarbornFirstJourneyQuestId))
-                AddQuestFromSphere(WarbornFirstJourneyQuestId, WarbornFirstJourneySphereId);
+            if (HasQuest(questId) || HasQuestCompleted(questId))
+                return;
+
+            // Harani can begin chapter one without the prologue.
+            if (firstChapterQuestId != 0 && (HasQuest(firstChapterQuestId) || HasQuestCompleted(firstChapterQuestId)))
+                return;
+
+            AddQuestFromSphere(questId, sphereId);
         }
         finally
         {
-            Volatile.Write(ref _startingWarbornFirstJourney, 0);
+            Volatile.Write(ref _startingFirstJourney, 0);
         }
     }
 

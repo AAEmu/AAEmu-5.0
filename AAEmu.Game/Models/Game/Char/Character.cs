@@ -1769,7 +1769,7 @@ public partial class Character : Unit, ICharacter
             }
 
             if (IsOnline && !DisabledSetPosition && lastZoneKey != 0)
-                Quests?.StartWarbornFirstJourney(newZoneKey);
+                Quests?.StartFirstJourneyWithoutMapSphere(newZoneKey);
 
             return;
         }
