@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Threading;
@@ -47,7 +48,7 @@ public class Slave : Unit
     public Item SummoningItem { get; init; }
     public List<Doodad> AttachedDoodads { get; set; }
     public List<Slave> AttachedSlaves { get; set; }
-    public Dictionary<AttachPointKind, Character> AttachedCharacters { get; set; }
+    public ConcurrentDictionary<AttachPointKind, Character> AttachedCharacters { get; } = new();
     public DateTime SpawnTime { get; init; }
     public sbyte ThrottleRequest { get; set; }
     public sbyte Throttle { get; set; }
@@ -128,7 +129,6 @@ public class Slave : Unit
     {
         AttachedDoodads = [];
         AttachedSlaves = [];
-        AttachedCharacters = [];
         HpTriggerPointsPercent.Add(0);
         HpTriggerPointsPercent.Add(25);
         HpTriggerPointsPercent.Add(50);

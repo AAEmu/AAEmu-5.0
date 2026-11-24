@@ -1,10 +1,13 @@
-﻿using AAEmu.Game.Core.Managers.UnitManagers;
+﻿using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.DoodadObj.Templates;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Units;
+using AAEmu.Game.Models.Game.Units.slaves;
+using AAEmu.Game.Models.StaticValues;
 
 using NLog;
 
@@ -18,6 +21,13 @@ public class Use : IWorldInteraction
         uint skillId, uint doodadId, DoodadFuncTemplate objectFunc = null)
     {
         Logger.Debug($"World interaction SkillID: {skillId}");
+        if (skillId == SkillsEnum.RideLongboard)
+        {
+            if (caster is Character rider && target is Slave board)
+                SlaveManager.Instance.BindLongboard(rider, board);
+            return;
+        }
+
         if (target is Doodad doodad)
         {
             doodad.Use(caster, skillId);

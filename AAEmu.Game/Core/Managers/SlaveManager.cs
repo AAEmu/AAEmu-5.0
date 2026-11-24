@@ -66,7 +66,7 @@ public class SlaveManager : Singleton<SlaveManager>
     public List<SlaveBindings> _slaveBindings;
     public List<SlaveDoodadBindings> _slaveDoodadBindings; // SlaveDoodadBindings & SlaveHealingPointDoodads
 
-    private object _slaveListLock;
+    private readonly object _slaveListLock = new();
     private Dictionary<uint, List<SlaveEquipSlots>> _slaveEquipSlots; // slaveId -> List<SlaveEquipSlots>
 
     private readonly Dictionary<Slave, (bool IsNear, long LastCheck)> _proximityCacheShip = new();
@@ -393,23 +393,46 @@ public class SlaveManager : Singleton<SlaveManager>
     /// <param name="reason"></param>
     public void UnbindSlave(Character character, uint tlId, AttachUnitReason reason)
     {
-        var slave = GetSlaveByTlId(tlId);
-
-        var attachPoint = slave.AttachedCharacters.FirstOrDefault(x => x.Value == character).Key;
-        if (attachPoint != default)
+        lock (_slaveListLock)
         {
-            slave.AttachedCharacters.Remove(attachPoint);
-            character.Transform.Parent = null;
-            character.Transform.StickyParent = null;
+            var slave = GetSlaveByTlId(tlId);
+            if (slave == null)
+                return;
+
+            foreach (var (attachPoint, occupant) in slave.AttachedCharacters)
+            {
+                if (occupant != character || attachPoint == AttachPointKind.None)
+                    continue;
+
+                slave.AttachedCharacters.TryRemove(attachPoint, out _);
+                character.Transform.Parent = null;
+                character.Transform.StickyParent = null;
+                break;
+            }
+
+            ShipHarpoonRopeController.OnOperatorLeftSlave(slave, character);
+            character.Buffs.TriggerRemoveOn(BuffRemoveOn.Unmount);
+            character.AttachedPoint = AttachPointKind.None;
+            character.BroadcastPacket(new SCUnitDetachedPacket(character.ObjId, reason), true);
         }
+    }
 
-        // Break harpoon rope when operator leaves the slave
-        ShipHarpoonRopeController.OnOperatorLeftSlave(slave, character);
+    public void BindLongboard(Character character, Slave board)
+    {
+        // Both versions use the same boarding skill and the driver attachment point.
+        if (board.Template is not { Id: 150 or 473, Mountable: true })
+            return;
 
-        character.Buffs.TriggerRemoveOn(BuffRemoveOn.Unmount);
-        character.AttachedPoint = AttachPointKind.None;
+        lock (_slaveListLock)
+        {
+            if (character.IsDead || character.AttachedPoint != AttachPointKind.None || board.IsDead ||
+                character.Transform.WorldId != board.Transform.WorldId ||
+                character.Transform.InstanceId != board.Transform.InstanceId ||
+                WorldManager.Instance.GetUnit(board.ObjId) != board)
+                return;
 
-        character.BroadcastPacket(new SCUnitDetachedPacket(character.ObjId, reason), true);
+            BindSlave(character, board, AttachPointKind.Driver, AttachUnitReason.NewMaster);
+        }
     }
 
     /// <summary>
@@ -421,35 +444,35 @@ public class SlaveManager : Singleton<SlaveManager>
     /// <param name="bondKind"></param>
     public void BindSlave(Character character, uint objId, AttachPointKind attachPoint, AttachUnitReason bondKind)
     {
-        // Check if the target spot is already taken
-        var slave = GetSlaveByObjId(objId);
+        lock (_slaveListLock)
+        {
+            if (WorldManager.Instance.GetUnit(objId) is Slave slave)
+                BindSlave(character, slave, attachPoint, bondKind);
+        }
+    }
 
-        if (slave == null || slave.AttachedCharacters.ContainsKey(attachPoint))
+    private static void BindSlave(Character character, Slave slave, AttachPointKind attachPoint, AttachUnitReason bondKind)
+    {
+        if (slave.AttachedCharacters.ContainsKey(attachPoint))
             return;
 
-        // Check if the vehicle has the MasterOwnership buff and if the character is not the owner, block the attachment.
-        if (attachPoint == AttachPointKind.Driver && slave.Buffs.CheckBuff((uint)BuffConstants.MasterOwnership) && slave.Summoner.ObjId != character.ObjId)
+        if (attachPoint == AttachPointKind.Driver &&
+            slave.Buffs.CheckBuff((uint)BuffConstants.MasterOwnership) &&
+            slave.Summoner?.ObjId != character.ObjId)
         {
-            character.SendErrorMessage(ErrorMessageType.SlaveAlreadyHasMaster); // 仅阻止驾驶座附加
+            character.SendErrorMessage(ErrorMessageType.SlaveAlreadyHasMaster);
             return;
         }
 
-        character.BroadcastPacket(new SCUnitAttachedPacket(character.ObjId, attachPoint, bondKind, objId), true);
         character.AttachedPoint = attachPoint;
-        switch (attachPoint)
-        {
-            case AttachPointKind.Driver:
-                character.BroadcastPacket(new SCSlaveBoundPacket(character.Id, objId), true);
-                break;
-        }
-
-        slave.AttachedCharacters.Add(attachPoint, character);
         character.Transform.Parent = slave.Transform;
-        // Reset the local (seat) offset so the occupant's world position stays locked to the vehicle.
-        // Without this, Local keeps the pre-board world position, so the occupant orbits the vehicle by
-        // ~world-distance as it rotates -> flung across the map (wrong zone, closed-zone drown, disconnect).
-        // Mirrors MateManager (mounts), which already does this and is why mounts work.
+        // Clear the old world position after parenting so it does not become a seat offset.
         character.Transform.Local.SetPosition(0, 0, 0);
+        slave.AttachedCharacters[attachPoint] = character;
+
+        character.BroadcastPacket(new SCUnitAttachedPacket(character.ObjId, attachPoint, bondKind, slave.ObjId), true);
+        if (attachPoint == AttachPointKind.Driver)
+            character.BroadcastPacket(new SCSlaveBoundPacket(character.Id, slave.ObjId), true);
     }
 
     /// <summary>
@@ -1262,7 +1285,6 @@ public class SlaveManager : Singleton<SlaveManager>
     public void Load()
     {
         _nameRegex = new Regex(AppConfiguration.Instance.CharacterNameRegex, RegexOptions.Compiled);
-        _slaveListLock = new object();
         _slaveTemplates = new Dictionary<uint, SlaveTemplate>();
         _slaveInitialItems = new Dictionary<uint, List<SlaveInitialItems>>();
         _slaveMountSkills = new Dictionary<uint, List<uint>>();

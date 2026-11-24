@@ -324,9 +324,7 @@ public class Skill
         if (castTime > 0)
         {
             // Has casting time, schedule a task for it
-            // Live server always sends Unit target (self) in SCSkillStarted for cast-time skills
-            // regardless of what the client sent (e.g. Doodad target for item skills)
-            var startedTarget = targetCaster is SkillCastUnitTarget ? targetCaster : new SkillCastUnitTarget(caster.ObjId);
+            var startedTarget = CreateStartedTarget(caster, targetCaster);
             caster.BroadcastPacket(new SCSkillStartedPacket(Id, TlId, casterCaster, startedTarget, this, skillObject)
             {
                 BaseCastTimeDiv10 = (ushort)(Template.CastingTime / 10),
@@ -956,6 +954,15 @@ public class Skill
     {
         units = SkillTargetingUtil.FilterWithRelation(Template.TargetRelation, caster, units);
         return units;
+    }
+
+    internal SkillCastTarget CreateStartedTarget(BaseUnit caster, SkillCastTarget targetCaster)
+    {
+        // The client ends and recreates the cast if SCSkillFired changes its target.
+        if (Id == (uint)SkillConstants.SummonTransport)
+            return CreateFiredTarget(caster, targetCaster);
+
+        return targetCaster is SkillCastUnitTarget ? targetCaster : new SkillCastUnitTarget(caster.ObjId);
     }
 
     private static SkillCastTarget CreateFiredTarget(BaseUnit caster, SkillCastTarget targetCaster)

@@ -18,6 +18,41 @@ public class SlaveMountSkillDataTests
     private const uint RowingDeviceBuffId = 11388;
 
     [Theory]
+    [InlineData(27361, 0f, 1.5f, 0f, 0f)]
+    [InlineData(27573, 0f, 7f, 7f, 0f)]
+    [InlineData(28057, 0f, 0f, 0f, 5f)]
+    [InlineData(28059, 0f, 0f, 0f, -5f)]
+    public void StarterLongboardHasMountedImpulseSkill(int skillId, float x, float y, float z, float angularZ)
+    {
+        using var connection = OpenCompactDatabase();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              SELECT impulse.vel_impulse_x, impulse.vel_impulse_y,
+                                     impulse.vel_impulse_z, impulse.angvel_impulse_z
+                              FROM character_supplies supply
+                              JOIN item_summon_slaves summon ON summon.item_id = supply.item_id
+                              JOIN slave_mount_skills sms ON sms.slave_id = summon.slave_id
+                              JOIN mount_skills ms ON ms.id = sms.mount_skill_id
+                              JOIN skills skill ON skill.id = ms.skill_id
+                              JOIN skill_effects se ON se.skill_id = skill.id
+                              JOIN effects e ON e.id = se.effect_id
+                              JOIN impulse_effects impulse ON impulse.id = e.actual_id
+                              WHERE supply.ability_id = 0 AND summon.item_id = 35020
+                                AND skill.id = $skillId AND skill.source_mount = 1
+                                AND e.actual_type = 'ImpulseEffect' AND se.application_method_id = 1;
+                              """;
+        command.Parameters.AddWithValue("$skillId", skillId);
+
+        using var reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal(x, reader.GetFloat(0));
+        Assert.Equal(y, reader.GetFloat(1));
+        Assert.Equal(z, reader.GetFloat(2));
+        Assert.Equal(angularZ, reader.GetFloat(3));
+        Assert.False(reader.Read());
+    }
+
+    [Theory]
     [InlineData(FarmHaulerFuelSkillId, FarmHaulerFuelBuffId, 3)]
     [InlineData(RedFarmHaulerFuelSkillId, RedFarmHaulerFuelBuffId, 3)]
     [InlineData(RedFarmHaulerAdditiveSkillId, RedFarmHaulerAdditiveBuffId, 3)]

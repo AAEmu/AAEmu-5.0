@@ -10,6 +10,7 @@ public enum SkillConstants : uint
     Moored = 13817,
     CaptainsProtection = 21369,
     DrydocksAvailable = 22047,
+    SummonTransport = 15802,
     Dismount = 35837,
     PatronStatus = 8000001,
     Patron = 8000011,

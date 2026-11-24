@@ -281,6 +281,7 @@ public class Transform : IDisposable
             {
                 // Сохраняем текущую глобальную позицию перед сменой родителя
                 var currentWorldPos = GetWorldPosition();
+                var worldPosition = currentWorldPos.Position;
 
                 if (_parentTransform != null)
                     _parentTransform.InternalDetachChild(this);
@@ -323,7 +324,7 @@ public class Transform : IDisposable
                     var parentScale = _parentTransform.GameObject is BaseUnit u ? u.Scale : 1f;
 
                     // Local = (World - Parent.World) / (Parent.Rotation * Parent.Scale)
-                    var deltaPos = currentWorldPos.Position - parentWorldPos.Position;
+                    var deltaPos = worldPosition - parentWorldPos.Position;
                     var unrotatedDelta = Vector3.Transform(deltaPos, Quaternion.Inverse(parentQuatRotation));
                     _localPosRot.Position = unrotatedDelta / parentScale;
 
@@ -334,7 +335,7 @@ public class Transform : IDisposable
 
                     if (_owningObject is Character aCharacter)
                     {
-                        Logger.Debug($"[SetParent] Character {aCharacter.Name}: OldWorldPos={currentWorldPos.Position}, ParentWorldPos={parentWorldPos.Position}, NewLocalPos={_localPosRot.Position}, NewWorldPos={GetWorldPosition().Position}");
+                        Logger.Debug($"[SetParent] Character {aCharacter.Name}: OldWorldPos={worldPosition}, ParentWorldPos={parentWorldPos.Position}, NewLocalPos={_localPosRot.Position}, NewWorldPos={GetWorldPosition().Position}");
                     }
                 }
                 else
@@ -355,20 +356,6 @@ public class Transform : IDisposable
         {
             _children.Add(child);
 
-            var inverseParentRotation = Quaternion.Inverse(World.ToQuaternion());
-            var parentScale = _owningObject is BaseUnit u ? u.Scale : 1f;
-
-            // NLObP version of transformations
-            // Convert current child world offset into local space and unscale it.
-            child.Local.Position =
-                Vector3.Transform(child.Local.Position - World.Position, inverseParentRotation) / parentScale;
-
-            // Child has no parent, so child.Local == child.World
-            var childWorldRotation = child.Local.ToQuaternion();
-            // Transform the child's world rotation to the local space of the parent, using the parent's inverse rotation
-            var localRotation = inverseParentRotation * childWorldRotation;
-            child.Local.ApplyFromQuaternion(localRotation);
-
             if (child.GameObject != null)
                 child.GameObject.ParentObj = this.GameObject;
         }
@@ -378,18 +365,6 @@ public class Transform : IDisposable
     {
         if (_children.Contains(child))
         {
-            var parentRotation = World.ToQuaternion();
-            var parentScale = _owningObject is BaseUnit u ? u.Scale : 1f;
-
-            // NLObP version of transformations
-            // When detaching, convert local (unscaled) back into world space including parent scale.
-            child.Local.Position = Vector3.Transform(child.Local.Position * parentScale, parentRotation) + World.Position;
-
-            var childLocalRotation = child.Local.ToQuaternion();
-            // Transform the child's local rotation relative to the parent to world space, using the parent's rotation
-            var worldRotation = parentRotation * childLocalRotation;
-            child.Local.ApplyFromQuaternion(worldRotation);
-
             _children.Remove(child);
             if (child.GameObject != null)
                 child.GameObject.ParentObj = null;

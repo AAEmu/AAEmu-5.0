@@ -11,6 +11,7 @@ using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
+using AAEmu.Game.Models.Game.DoodadObj.Static;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Buffs;
 using AAEmu.Game.Models.Game.Units;
@@ -144,7 +145,6 @@ public class CSMoveUnitPacket : GamePacket
                 }
             case VehicleMoveType vmt:
                 {
-                    // TODO: Validate if we are in the driver seat
                     // Steering: Value between -1.0 and +1.0
                     // WheelAngVel: Velocity on individual wheels? (note: cart/wagon has "no wheels")
                     /*
@@ -154,7 +154,9 @@ public class CSMoveUnitPacket : GamePacket
                                string.Join(" , ", vmt.WheelAngVel.ToArray()) + " )");
                     */
 
-                    if (targetUnit is not Slave car)
+                    // Movement packets already in flight can arrive after the driver has dismounted.
+                    if (targetUnit is not Slave car ||
+                        !car.AttachedCharacters.TryGetValue(AttachPointKind.Driver, out var driver) || driver != character)
                         return;
 
                     // Out-of-bounds guard: a glitched vehicle client (e.g. Cogwheel Longboard / cart physics)
@@ -176,8 +178,6 @@ public class CSMoveUnitPacket : GamePacket
 
                     var (rotDegX, rotDegY, rotDegZ) = MathUtil.GetSlaveRotationInDegrees(vmt.RotationX, vmt.RotationY, vmt.RotationZ);
 
-                    // Make sure driver is attached to car
-                    character.Transform.Parent = car.Transform;
                     car.Transform.Local.SetPosition(vmt.X, vmt.Y, vmt.Z, rotDegX, rotDegY, rotDegZ);
                     car.BroadcastPacket(new SCOneUnitMovementPacket(_objId, vmt), true);
                     car.Transform.FinalizeTransform(); // Propagate position updates to all children

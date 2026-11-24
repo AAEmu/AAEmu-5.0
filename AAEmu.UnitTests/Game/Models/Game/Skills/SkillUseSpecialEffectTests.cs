@@ -70,6 +70,17 @@ public class SkillUseSpecialEffectTests
     }
 
     [Fact]
+    public void TransportSummonKeepsSamePositionTargetInStartedAndFiredPackets()
+    {
+        var caster = CreateUnit(100, 100f, 200f, 5f, 0f);
+        var skill = new Skill(new SkillTemplate { Id = 15802, TargetType = SkillTargetType.SummonPos });
+        var target = new SkillCastPositionTarget { PosX = 104f, PosY = 201f, PosZ = 5f, PosRot = 1f };
+
+        Assert.Same(target, skill.CreateStartedTarget(caster, target));
+        Assert.Same(target, CreateFiredTarget(caster, target));
+    }
+
+    [Fact]
     public void FiredPacketTargetKeepsPositionTarget()
     {
         var caster = CreateUnit(100, 100f, 200f, 5f, 0f);
