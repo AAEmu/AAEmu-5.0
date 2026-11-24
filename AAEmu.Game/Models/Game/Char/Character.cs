@@ -1768,6 +1768,9 @@ public partial class Character : Unit, ICharacter
                 _unreleasedZoneTransportedOut = null;
             }
 
+            if (IsOnline && !DisabledSetPosition && lastZoneKey != 0)
+                Quests?.StartWarbornFirstJourney(newZoneKey);
+
             return;
         }
 

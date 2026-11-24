@@ -1441,7 +1441,12 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
             FamilyManager.Instance.OnCharacterLogin(character);
         }
 
-        if (AppConfiguration.Instance.World.FirstJourneyEnable)
+        if (character.Race == Race.Warborn)
+        {
+            // The Warborn story requires this quest and the client map has no starter sphere for it.
+            character.Quests.StartWarbornFirstJourney(character.Transform.ZoneId);
+        }
+        else if (AppConfiguration.Instance.World.FirstJourneyEnable)
         {
             StartingFirstJourney(character);
         }
@@ -1472,10 +1477,6 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
             case Race.Ferre: // Ferre
                 questId = 6841;
                 sphereId = 2323;
-                break;
-            case Race.Warborn: // Warborn
-                questId = 8228;
-                sphereId = 2600;
                 break;
             case Race.Fairy:
                 break;

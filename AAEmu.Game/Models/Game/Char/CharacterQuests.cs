@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using System.Threading;
 
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.Id;
@@ -23,8 +24,12 @@ namespace AAEmu.Game.Models.Game.Char;
 
 public class CharacterQuests
 {
+    private const uint WarbornStartingZoneKey = 157;
+    private const uint WarbornFirstJourneyQuestId = 8228;
+    private const uint WarbornFirstJourneySphereId = 2600;
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private readonly List<uint> _removed;
+    private int _startingWarbornFirstJourney;
 
     private Character Owner { get; set; }
     public Dictionary<uint, Quest> ActiveQuests { get; }
@@ -58,6 +63,27 @@ public class CharacterQuests
         var questBlockId = (ushort)(questId / 64);
         var questBlockIndex = (int)(questId % 64);
         return CompletedQuests.TryGetValue(questBlockId, out var questBlock) && questBlock.Body.Get(questBlockIndex);
+    }
+
+    internal void StartWarbornFirstJourney(uint zoneKey)
+    {
+        if (zoneKey != WarbornStartingZoneKey || Owner.Race != Race.Warborn ||
+            Owner.Transform?.WorldId != WorldManager.DefaultWorldId)
+            return;
+
+        // World entry and a zone change can both request the same quest.
+        if (Interlocked.CompareExchange(ref _startingWarbornFirstJourney, 1, 0) != 0)
+            return;
+
+        try
+        {
+            if (!HasQuest(WarbornFirstJourneyQuestId) && !HasQuestCompleted(WarbornFirstJourneyQuestId))
+                AddQuestFromSphere(WarbornFirstJourneyQuestId, WarbornFirstJourneySphereId);
+        }
+        finally
+        {
+            Volatile.Write(ref _startingWarbornFirstJourney, 0);
+        }
     }
 
     /// <summary>

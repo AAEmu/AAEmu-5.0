@@ -99,7 +99,7 @@ public class WorldConfig
     public bool SaveGeoDataMode { get; set; }
 
     /// <summary>
-    /// Enables First Journey
+    /// Enables optional First Journey quests at login.
     /// </summary>
     public bool FirstJourneyEnable { get; set; }
 
